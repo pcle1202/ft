@@ -10,8 +10,15 @@ type FriendFormProps = {
 export default function FriendForm({ onAddFriend }: FriendFormProps) {
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
-  const [textFrequencyDays, setTextFrequencyDays] = useState(14);
-  const [hangoutFrequencyDays, setHangoutFrequencyDays] = useState(30);
+
+  const [lastTexted, setLastTexted] = useState("");
+  const [lastHungOut, setLastHungOut] = useState("");
+
+  const [textAmount, setTextAmount] = useState(14);
+  const [textUnit, setTextUnit] = useState<"days" | "months">("days");
+
+  const [hangoutAmount, setHangoutAmount] = useState(1);
+  const [hangoutUnit, setHangoutUnit] = useState<"days" | "months">("months");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,8 +27,11 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
       id: crypto.randomUUID(),
       name,
       notes,
-      textFrequencyDays,
-      hangoutFrequencyDays,
+      lastTexted: lastTexted ? new Date(lastTexted).toISOString() : undefined,
+      lastHungOut: lastHungOut ? new Date(lastHungOut).toISOString() : undefined,
+      textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
+      hangoutFrequencyDays:
+        hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
       createdAt: new Date().toISOString(),
     };
 
@@ -29,8 +39,12 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
 
     setName("");
     setNotes("");
-    setTextFrequencyDays(14);
-    setHangoutFrequencyDays(30);
+    setLastTexted("");
+    setLastHungOut("");
+    setTextAmount(14);
+    setTextUnit("days");
+    setHangoutAmount(1);
+    setHangoutUnit("months");
   }
 
   return (
@@ -47,32 +61,82 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
 
       <textarea
         className="w-full rounded-lg border px-3 py-2"
-        placeholder="Notes, like where you met or what they like"
+        placeholder="Notes"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1">
-          <span className="text-sm">Text every</span>
+          <span className="text-sm">Last texted</span>
           <input
-            type="number"
+            type="date"
             className="w-full rounded-lg border px-3 py-2"
-            value={textFrequencyDays}
-            onChange={(e) => setTextFrequencyDays(Number(e.target.value))}
-            min={1}
+            value={lastTexted}
+            onChange={(e) => setLastTexted(e.target.value)}
           />
         </label>
 
         <label className="space-y-1">
-          <span className="text-sm">Hang out every</span>
+          <span className="text-sm">Last hung out</span>
           <input
-            type="number"
+            type="date"
             className="w-full rounded-lg border px-3 py-2"
-            value={hangoutFrequencyDays}
-            onChange={(e) => setHangoutFrequencyDays(Number(e.target.value))}
-            min={1}
+            value={lastHungOut}
+            onChange={(e) => setLastHungOut(e.target.value)}
           />
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        <label className="space-y-1 block">
+          <span className="text-sm">Text every</span>
+
+          <div className="grid grid-cols-[minmax(90px,1fr)_120px] gap-2">
+            <input
+              type="number"
+              className="w-full rounded-lg border px-3 py-2"
+              value={textAmount}
+              onChange={(e) => setTextAmount(Number(e.target.value))}
+              min={1}
+            />
+
+            <select
+              className="w-full rounded-lg border px-3 py-2"
+              value={textUnit}
+              onChange={(e) =>
+                setTextUnit(e.target.value as "days" | "months")
+              }
+            >
+              <option value="days">days</option>
+              <option value="months">months</option>
+            </select>
+          </div>
+        </label>
+
+        <label className="space-y-1 block">
+          <span className="text-sm">Hang out every</span>
+
+          <div className="grid grid-cols-[minmax(90px,1fr)_120px] gap-2">
+            <input
+              type="number"
+              className="w-full rounded-lg border px-3 py-2"
+              value={hangoutAmount}
+              onChange={(e) => setHangoutAmount(Number(e.target.value))}
+              min={1}
+            />
+
+            <select
+              className="w-full rounded-lg border px-3 py-2"
+              value={hangoutUnit}
+              onChange={(e) =>
+                setHangoutUnit(e.target.value as "days" | "months")
+              }
+            >
+              <option value="days">days</option>
+              <option value="months">months</option>
+            </select>
+          </div>
         </label>
       </div>
 
