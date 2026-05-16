@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Friend } from "@/types/friend";
+import { Friend, FriendCategory } from "@/types/friend";
 
 type FriendFormProps = {
   onAddFriend: (friend: Friend) => void;
@@ -10,6 +10,7 @@ type FriendFormProps = {
 export default function FriendForm({ onAddFriend }: FriendFormProps) {
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
+  const [category, setCategory] = useState<FriendCategory>("close friend");
 
   const [lastTexted, setLastTexted] = useState("");
   const [lastHungOut, setLastHungOut] = useState("");
@@ -27,6 +28,7 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
       id: crypto.randomUUID(),
       name,
       notes,
+      category,
       lastTexted: lastTexted ? new Date(lastTexted).toISOString() : undefined,
       lastHungOut: lastHungOut ? new Date(lastHungOut).toISOString() : undefined,
       textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
@@ -39,6 +41,7 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
 
     setName("");
     setNotes("");
+    setCategory("close friend");
     setLastTexted("");
     setLastHungOut("");
     setTextAmount(14);
@@ -66,6 +69,21 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
         onChange={(e) => setNotes(e.target.value)}
       />
 
+    <label className="space-y-1 block">
+      <span className="text-sm">Category</span>
+
+      <select
+        className="w-full rounded-lg border px-3 py-2"
+        value={category}
+        onChange={(e) => setCategory(e.target.value as FriendCategory)}
+      >
+        <option value="close friend">Close friend</option>
+        <option value="family">Family</option>
+        <option value="classmate">Classmate</option>
+        <option value="coworker">Coworker</option>
+        <option value="other">Other</option>
+      </select>
+    </label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1">
           <span className="text-sm">Last texted</span>

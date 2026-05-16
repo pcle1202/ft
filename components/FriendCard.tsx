@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Friend } from "@/types/friend";
+import { Friend, FriendCategory } from "@/types/friend";
 import { formatLastInteraction, getStatus } from "@/lib/date";
 
 type FriendCardProps = {
@@ -16,6 +16,16 @@ function daysToAmountAndUnit(days: number) {
   }
 
   return { amount: days, unit: "days" as const };
+}
+
+function formatFrequency(days: number) {
+  if (days % 30 === 0) {
+    const months = days / 30;
+
+    return `${months} month${months > 1 ? "s" : ""}`;
+  }
+
+  return `${days} day${days > 1 ? "s" : ""}`;
 }
 
 function isoToDateInput(value?: string) {
@@ -34,6 +44,9 @@ export default function FriendCard({
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(friend.name);
   const [notes, setNotes] = useState(friend.notes ?? "");
+  const [category, setCategory] = useState<FriendCategory>(
+    friend.category ?? "other"
+  );
   const [lastTexted, setLastTexted] = useState(
     isoToDateInput(friend.lastTexted)
   );
@@ -72,6 +85,7 @@ export default function FriendCard({
       ...friend,
       name,
       notes,
+      category,
       lastTexted: lastTexted ? new Date(lastTexted).toISOString() : undefined,
       lastHungOut: lastHungOut ? new Date(lastHungOut).toISOString() : undefined,
       textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
@@ -87,6 +101,7 @@ export default function FriendCard({
     const resetHangout = daysToAmountAndUnit(friend.hangoutFrequencyDays);
 
     setName(friend.name);
+    setCategory(friend.category ?? "other");
     setNotes(friend.notes ?? "");
     setLastTexted(isoToDateInput(friend.lastTexted));
     setLastHungOut(isoToDateInput(friend.lastHungOut));
@@ -111,8 +126,22 @@ export default function FriendCard({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes"
-        />
+          />
+        <label className="space-y-1 block">
+          <span className="text-sm">Category</span>
 
+          <select
+            className="w-full rounded-lg border px-3 py-2"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as FriendCategory)}
+          >
+            <option value="close friend">Close friend</option>
+            <option value="family">Family</option>
+            <option value="classmate">Classmate</option>
+            <option value="coworker">Coworker</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-sm">Last texted</span>
@@ -210,10 +239,28 @@ export default function FriendCard({
     <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
       <div>
         <h3 className="text-lg font-semibold">{friend.name}</h3>
+        <p className="text-xs uppercase tracking-wide text-gray-400">
+          {friend.category ?? "other"}
+        </p>
         {friend.notes && <p className="text-sm text-gray-500">{friend.notes}</p>}
       </div>
 
       <div className="space-y-2 text-sm">
+        <div className="text-sm text-gray-500 space-y-1">
+          <p>
+            Text every:{" "}
+            <span className="font-medium text-black">
+              {formatFrequency(friend.textFrequencyDays)}
+            </span>
+          </p>
+
+          <p>
+            Hang out every:{" "}
+            <span className="font-medium text-black">
+              {formatFrequency(friend.hangoutFrequencyDays)}
+            </span>
+          </p>
+        </div>
         <div className="flex items-center justify-between gap-4">
           <span>Last texted: {formatLastInteraction(friend.lastTexted)}</span>
           <span
