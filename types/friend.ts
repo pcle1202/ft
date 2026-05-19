@@ -15,4 +15,16 @@ export type Friend = {
   textFrequencyDays: number;
   hangoutFrequencyDays: number;
   createdAt: string;
+  interactions: Interaction[];
 };
+
+export type InteractionType = "text" | "hangout";
+
+export type Interaction = {
+  id: string;
+  type: InteractionType;
+  date: string;
+  notes?: string;
+  location?: string;
+};
+

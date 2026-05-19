@@ -35,6 +35,7 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
       hangoutFrequencyDays:
         hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
       createdAt: new Date().toISOString(),
+      interactions: [],
     };
 
     onAddFriend(newFriend);
@@ -51,23 +52,39 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border p-4 space-y-4">
-      <h2 className="text-xl font-semibold">Add a friend</h2>
+    
+    <form onSubmit={handleSubmit} className="space-y-5">
+      
+      <div>
+      <h2 className="text-2xl font-semibold text-stone-900">
+        Add Friend
+      </h2>
 
-      <input
-        className="w-full rounded-lg border px-3 py-2"
-        placeholder="Friend's name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        required
-      />
+      <p className="mt-1 text-sm text-stone-500">
+        Add someone you want to keep in touch with.
+      </p>
+    </div>
+    <label className="block space-y-1">
+      <span className="text-sm">Name</span>
+          <input
+            className="w-full rounded-lg border px-3 py-2"
+            placeholder="Friend's name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+    </label>
+
+    <label className="block space-y-1">
+      <span className="text-sm">Notes</span>
 
       <textarea
         className="w-full rounded-lg border px-3 py-2"
-        placeholder="Notes"
+        placeholder="Anything important to remember?"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
+    </label>
 
     <label className="space-y-1 block">
       <span className="text-sm">Category</span>
@@ -160,7 +177,7 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
 
       <button
         type="submit"
-        className="w-full rounded-lg bg-black px-4 py-2 text-white"
+        className="w-full rounded-xl bg-stone-900 px-4 py-3 text-white transition hover:bg-stone-700"
       >
         Add friend
       </button>

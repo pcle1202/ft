@@ -4,9 +4,23 @@ import { useState } from "react";
 import { Friend, FriendCategory } from "@/types/friend";
 import { formatLastInteraction, getStatus } from "@/lib/date";
 
+type InteractionType = "text" | "hangout";
+
+type Interaction = {
+  id: string;
+  type: InteractionType;
+  date: string;
+  notes?: string;
+  location?: string;
+};
+
+type FriendWithInteractions = Friend & {
+  interactions?: Interaction[];
+};
+
 type FriendCardProps = {
-  friend: Friend;
-  onUpdateFriend: (friend: Friend) => void;
+  friend: FriendWithInteractions;
+  onUpdateFriend: (friend: FriendWithInteractions) => void;
   onDeleteFriend: (friendId: string) => void;
 };
 
@@ -21,7 +35,6 @@ function daysToAmountAndUnit(days: number) {
 function formatFrequency(days: number) {
   if (days % 30 === 0) {
     const months = days / 30;
-
     return `${months} month${months > 1 ? "s" : ""}`;
   }
 
@@ -33,6 +46,39 @@ function isoToDateInput(value?: string) {
   return value.slice(0, 10);
 }
 
+function getDaysAgo(date?: string) {
+  if (!date) return Infinity;
+
+  return Math.floor(
+    (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24)
+  );
+}
+
+function getUrgency(friend: Friend) {
+  const textDays = getDaysAgo(friend.lastTexted);
+  const hangoutDays = getDaysAgo(friend.lastHungOut);
+
+  const textOverdueBy = textDays - friend.textFrequencyDays;
+  const hangoutOverdueBy = hangoutDays - friend.hangoutFrequencyDays;
+
+  return Math.max(textOverdueBy, hangoutOverdueBy);
+}
+
+function getHealthScore(friend: Friend) {
+  const urgency = getUrgency(friend);
+
+  if (urgency === Infinity) return 0;
+
+  const score = 100 - Math.max(urgency, 0) * 8;
+  return Math.max(Math.min(score, 100), 0);
+}
+
+function getHealthLabel(score: number) {
+  if (score >= 75) return "Healthy";
+  if (score >= 45) return "Needs attention";
+  return "Overdue";
+}
+
 export default function FriendCard({
   friend,
   onUpdateFriend,
@@ -42,6 +88,7 @@ export default function FriendCard({
   const initialHangout = daysToAmountAndUnit(friend.hangoutFrequencyDays);
 
   const [isEditing, setIsEditing] = useState(false);
+
   const [name, setName] = useState(friend.name);
   const [notes, setNotes] = useState(friend.notes ?? "");
   const [category, setCategory] = useState<FriendCategory>(
@@ -62,11 +109,19 @@ export default function FriendCard({
     initialHangout.unit
   );
 
+  const [logType, setLogType] = useState<InteractionType | null>(null);
+  const [logNotes, setLogNotes] = useState("");
+  const [logLocation, setLogLocation] = useState("");
+
   const textStatus = getStatus(friend.lastTexted, friend.textFrequencyDays);
   const hangoutStatus = getStatus(
     friend.lastHungOut,
     friend.hangoutFrequencyDays
   );
+
+  const healthScore = getHealthScore(friend);
+  const healthLabel = getHealthLabel(healthScore);
+  const interactions = friend.interactions ?? [];
 
   function statusLabel(status: "good" | "dueSoon" | "overdue") {
     if (status === "good") return "Good";
@@ -75,8 +130,8 @@ export default function FriendCard({
   }
 
   function statusClass(status: "good" | "dueSoon" | "overdue") {
-    if (status === "good") return "bg-green-100 text-green-700";
-    if (status === "dueSoon") return "bg-yellow-100 text-yellow-700";
+    if (status === "good") return "bg-emerald-100 text-emerald-700";
+    if (status === "dueSoon") return "bg-amber-100 text-amber-700";
     return "bg-red-100 text-red-700";
   }
 
@@ -91,6 +146,7 @@ export default function FriendCard({
       textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
       hangoutFrequencyDays:
         hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
+      interactions,
     });
 
     setIsEditing(false);
@@ -112,9 +168,45 @@ export default function FriendCard({
     setIsEditing(false);
   }
 
+  function openLogModal(type: InteractionType) {
+    setLogType(type);
+    setLogNotes("");
+    setLogLocation("");
+  }
+
+  function closeLogModal() {
+    setLogType(null);
+    setLogNotes("");
+    setLogLocation("");
+  }
+
+  function handleLogInteraction() {
+    if (!logType) return;
+
+    const now = new Date().toISOString();
+
+    const newInteraction: Interaction = {
+      id: crypto.randomUUID(),
+      type: logType,
+      date: now,
+      notes: logNotes.trim() || undefined,
+      location: logLocation.trim() || undefined,
+    };
+
+    const updatedFriend: FriendWithInteractions = {
+      ...friend,
+      lastTexted: logType === "text" ? now : friend.lastTexted,
+      lastHungOut: logType === "hangout" ? now : friend.lastHungOut,
+      interactions: [newInteraction, ...interactions],
+    };
+
+    onUpdateFriend(updatedFriend);
+    closeLogModal();
+  }
+
   if (isEditing) {
     return (
-      <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
+      <div className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
         <input
           className="w-full rounded-lg border px-3 py-2"
           value={name}
@@ -126,8 +218,9 @@ export default function FriendCard({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes"
-          />
-        <label className="space-y-1 block">
+        />
+
+        <label className="block space-y-1">
           <span className="text-sm">Category</span>
 
           <select
@@ -142,6 +235,7 @@ export default function FriendCard({
             <option value="other">Other</option>
           </select>
         </label>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-sm">Last texted</span>
@@ -164,67 +258,17 @@ export default function FriendCard({
           </label>
         </div>
 
-        <div className="space-y-3">
-          <label className="space-y-1 block">
-            <span className="text-sm">Text every</span>
-
-            <div className="grid grid-cols-[minmax(90px,1fr)_120px] gap-2">
-              <input
-                type="number"
-                className="w-full rounded-lg border px-3 py-2"
-                value={textAmount}
-                onChange={(e) => setTextAmount(Number(e.target.value))}
-                min={1}
-              />
-
-              <select
-                className="w-full rounded-lg border px-3 py-2"
-                value={textUnit}
-                onChange={(e) =>
-                  setTextUnit(e.target.value as "days" | "months")
-                }
-              >
-                <option value="days">days</option>
-                <option value="months">months</option>
-              </select>
-            </div>
-          </label>
-
-          <label className="space-y-1 block">
-            <span className="text-sm">Hang out every</span>
-
-            <div className="grid grid-cols-[minmax(90px,1fr)_120px] gap-2">
-              <input
-                type="number"
-                className="w-full rounded-lg border px-3 py-2"
-                value={hangoutAmount}
-                onChange={(e) => setHangoutAmount(Number(e.target.value))}
-                min={1}
-              />
-
-              <select
-                className="w-full rounded-lg border px-3 py-2"
-                value={hangoutUnit}
-                onChange={(e) =>
-                  setHangoutUnit(e.target.value as "days" | "months")
-                }
-              >
-                <option value="days">days</option>
-                <option value="months">months</option>
-              </select>
-            </div>
-          </label>
-        </div>
-
         <div className="grid grid-cols-2 gap-2">
           <button
-            className="rounded-lg bg-black px-3 py-2 text-sm text-white"
+            type="button"
+            className="rounded-lg bg-stone-900 px-3 py-2 text-sm text-white"
             onClick={handleSave}
           >
             Save
           </button>
 
           <button
+            type="button"
             className="rounded-lg border px-3 py-2 text-sm"
             onClick={handleCancel}
           >
@@ -236,95 +280,225 @@ export default function FriendCard({
   }
 
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold">{friend.name}</h3>
-        <p className="text-xs uppercase tracking-wide text-gray-400">
-          {friend.category ?? "other"}
-        </p>
-        {friend.notes && <p className="text-sm text-gray-500">{friend.notes}</p>}
-      </div>
+    <>
+      <div className="space-y-5 rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md">
+        <div className="flex items-start justify-between gap-5">
+          <div className="min-w-0">
+            <h3 className="truncate text-xl font-semibold text-stone-900">
+              {friend.name}
+            </h3>
 
-      <div className="space-y-2 text-sm">
-        <div className="text-sm text-gray-500 space-y-1">
-          <p>
-            Text every:{" "}
-            <span className="font-medium text-black">
-              {formatFrequency(friend.textFrequencyDays)}
+            <p className="mt-1 text-xs uppercase tracking-wide text-stone-400">
+              {friend.category ?? "other"}
+            </p>
+
+            {friend.notes && (
+              <p className="mt-3 line-clamp-2 text-sm text-stone-500">
+                {friend.notes}
+              </p>
+            )}
+          </div>
+
+          <div className="shrink-0 rounded-2xl bg-stone-900 px-4 py-3 text-center text-white">
+            <p className="text-3xl font-bold leading-none">{healthScore}%</p>
+            <p className="mt-1 text-xs">{healthLabel}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-xl bg-stone-50 p-3">
+            <p className="text-stone-400">Text cadence</p>
+            <p className="font-medium text-stone-900">
+              Every {formatFrequency(friend.textFrequencyDays)}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-stone-50 p-3">
+            <p className="text-stone-400">Hangout cadence</p>
+            <p className="font-medium text-stone-900">
+              Every {formatFrequency(friend.hangoutFrequencyDays)}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-stone-600">
+              Last texted: {formatLastInteraction(friend.lastTexted)}
             </span>
-          </p>
 
-          <p>
-            Hang out every:{" "}
-            <span className="font-medium text-black">
-              {formatFrequency(friend.hangoutFrequencyDays)}
+            <span
+              className={`shrink-0 rounded-full px-2 py-1 text-xs ${statusClass(
+                textStatus
+              )}`}
+            >
+              {statusLabel(textStatus)}
             </span>
-          </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-stone-600">
+              Last hung out: {formatLastInteraction(friend.lastHungOut)}
+            </span>
+
+            <span
+              className={`shrink-0 rounded-full px-2 py-1 text-xs ${statusClass(
+                hangoutStatus
+              )}`}
+            >
+              {statusLabel(hangoutStatus)}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-4">
-          <span>Last texted: {formatLastInteraction(friend.lastTexted)}</span>
-          <span
-            className={`shrink-0 rounded-full px-2 py-1 text-xs ${statusClass(
-              textStatus
-            )}`}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-stone-50"
+            onClick={() => openLogModal("text")}
           >
-            {statusLabel(textStatus)}
-          </span>
-        </div>
+            Texted today
+          </button>
 
-        <div className="flex items-center justify-between gap-4">
-          <span>Last hung out: {formatLastInteraction(friend.lastHungOut)}</span>
-          <span
-            className={`shrink-0 rounded-full px-2 py-1 text-xs ${statusClass(
-              hangoutStatus
-            )}`}
+          <button
+            type="button"
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-stone-50"
+            onClick={() => openLogModal("hangout")}
           >
-            {statusLabel(hangoutStatus)}
-          </span>
+            Hung out today
+          </button>
+        </div>
+
+        {interactions.length > 0 && (
+          <div className="rounded-xl border bg-stone-50 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-medium text-stone-900">
+                Recent interactions
+              </p>
+              <p className="text-xs text-stone-400">
+                {interactions.length} total
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {interactions.slice(0, 3).map((interaction) => (
+                <div
+                  key={interaction.id}
+                  className="rounded-lg bg-white p-3 text-sm text-stone-600"
+                >
+                  <p>
+                    <span className="font-medium capitalize text-stone-900">
+                      {interaction.type}
+                    </span>{" "}
+                    · {formatLastInteraction(interaction.date)}
+                  </p>
+
+                  {interaction.location && (
+                    <p className="mt-1 text-xs text-stone-500">
+                      📍 {interaction.location}
+                    </p>
+                  )}
+
+                  {interaction.notes && (
+                    <p className="mt-1 text-xs text-stone-500">
+                      {interaction.notes}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="flex justify-between border-t pt-3">
+          <button
+            type="button"
+            className="text-sm text-stone-600 hover:text-stone-900"
+            onClick={() => setIsEditing(true)}
+          >
+            Edit
+          </button>
+
+          <button
+            type="button"
+            className="text-sm text-red-500 hover:text-red-600"
+            onClick={() => onDeleteFriend(friend.id)}
+          >
+            Delete
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          className="rounded-lg border px-3 py-2 text-sm"
-          onClick={() =>
-            onUpdateFriend({
-              ...friend,
-              lastTexted: new Date().toISOString(),
-            })
-          }
-        >
-          Texted today
-        </button>
+      {logType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-stone-900">
+                  Log {logType === "text" ? "Text" : "Hangout"}
+                </h2>
 
-        <button
-          className="rounded-lg border px-3 py-2 text-sm"
-          onClick={() =>
-            onUpdateFriend({
-              ...friend,
-              lastHungOut: new Date().toISOString(),
-            })
-          }
-        >
-          Hung out today
-        </button>
-      </div>
+                <p className="mt-1 text-sm text-stone-500">
+                  Confirm now, or add details first.
+                </p>
+              </div>
 
-      <div className="flex justify-between">
-        <button
-          className="text-sm text-gray-600"
-          onClick={() => setIsEditing(true)}
-        >
-          Edit
-        </button>
+              <button
+                type="button"
+                onClick={closeLogModal}
+                className="rounded-full px-2 text-xl text-stone-500 hover:bg-stone-100"
+              >
+                ×
+              </button>
+            </div>
 
-        <button
-          className="text-sm text-red-500"
-          onClick={() => onDeleteFriend(friend.id)}
-        >
-          Delete
-        </button>
-      </div>
-    </div>
+            {logType === "hangout" && (
+              <label className="mt-5 block space-y-1">
+                <span className="text-sm">Where did you hang out?</span>
+
+                <input
+                  className="w-full rounded-lg border px-3 py-2"
+                  placeholder="Coffee shop, campus, restaurant..."
+                  value={logLocation}
+                  onChange={(e) => setLogLocation(e.target.value)}
+                />
+              </label>
+            )}
+
+            <label className="mt-5 block space-y-1">
+              <span className="text-sm">
+                {logType === "text"
+                  ? "What did you talk about?"
+                  : "What did you do?"}
+              </span>
+
+              <textarea
+                className="w-full rounded-lg border px-3 py-2"
+                placeholder="Optional details..."
+                value={logNotes}
+                onChange={(e) => setLogNotes(e.target.value)}
+              />
+            </label>
+
+            <div className="mt-6 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={closeLogModal}
+                className="rounded-xl border px-4 py-3 text-sm hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLogInteraction}
+                className="rounded-xl bg-stone-900 px-4 py-3 text-sm text-white hover:bg-stone-700"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
