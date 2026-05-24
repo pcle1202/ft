@@ -88,7 +88,7 @@ export default function FriendCard({
   const initialHangout = daysToAmountAndUnit(friend.hangoutFrequencyDays);
 
   const [isEditing, setIsEditing] = useState(false);
-
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [name, setName] = useState(friend.name);
   const [notes, setNotes] = useState(friend.notes ?? "");
   const [category, setCategory] = useState<FriendCategory>(
@@ -100,7 +100,10 @@ export default function FriendCard({
   const [lastHungOut, setLastHungOut] = useState(
     isoToDateInput(friend.lastHungOut)
   );
-
+  const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10));
+  const [editingInteractionId, setEditingInteractionId] = useState<string | null>(
+    null
+  );
   const [textAmount, setTextAmount] = useState(initialText.amount);
   const [textUnit, setTextUnit] = useState<"days" | "months">(initialText.unit);
 
@@ -172,38 +175,90 @@ export default function FriendCard({
     setLogType(type);
     setLogNotes("");
     setLogLocation("");
+    setLogDate(new Date().toISOString().slice(0, 10));
+    setEditingInteractionId(null);
   }
 
   function closeLogModal() {
     setLogType(null);
     setLogNotes("");
     setLogLocation("");
+    setLogDate(new Date().toISOString().slice(0, 10));
+    setEditingInteractionId(null);
   }
 
   function handleLogInteraction() {
     if (!logType) return;
 
-    const now = new Date().toISOString();
+    const selectedDate = new Date(logDate).toISOString();
+
+    if (editingInteractionId) {
+      const updatedInteractions = interactions.map((interaction) =>
+        interaction.id === editingInteractionId
+          ? {
+              ...interaction,
+              type: logType,
+              date: selectedDate,
+              notes: logNotes.trim() || undefined,
+              location:
+                logType === "hangout"
+                  ? logLocation.trim() || undefined
+                  : undefined,
+            }
+          : interaction
+      );
+
+      onUpdateFriend({
+        ...friend,
+        lastTexted:
+          logType === "text" ? selectedDate : friend.lastTexted,
+        lastHungOut:
+          logType === "hangout" ? selectedDate : friend.lastHungOut,
+        interactions: updatedInteractions,
+      });
+
+      closeLogModal();
+      return;
+    }
 
     const newInteraction: Interaction = {
       id: crypto.randomUUID(),
       type: logType,
-      date: now,
+      date: selectedDate,
       notes: logNotes.trim() || undefined,
-      location: logLocation.trim() || undefined,
+      location:
+        logType === "hangout" ? logLocation.trim() || undefined : undefined,
     };
 
-    const updatedFriend: FriendWithInteractions = {
+    onUpdateFriend({
       ...friend,
-      lastTexted: logType === "text" ? now : friend.lastTexted,
-      lastHungOut: logType === "hangout" ? now : friend.lastHungOut,
+      lastTexted: logType === "text" ? selectedDate : friend.lastTexted,
+      lastHungOut: logType === "hangout" ? selectedDate : friend.lastHungOut,
       interactions: [newInteraction, ...interactions],
-    };
+    });
 
-    onUpdateFriend(updatedFriend);
     closeLogModal();
   }
+  function handleEditInteraction(interaction: Interaction) {
+    setLogType(interaction.type);
+    setLogDate(interaction.date.slice(0, 10));
+    setLogNotes(interaction.notes ?? "");
+    setLogLocation(interaction.location ?? "");
+    setEditingInteractionId(interaction.id);
+  }
 
+  function handleDeleteInteraction(interactionId: string) {
+    const updatedInteractions = interactions.filter(
+      (interaction) => interaction.id !== interactionId
+    );
+
+    onUpdateFriend({
+      ...friend,
+      interactions: updatedInteractions,
+    });
+  }
+  
+  
   if (isEditing) {
     return (
       <div className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
@@ -375,37 +430,63 @@ export default function FriendCard({
               <p className="text-sm font-medium text-stone-900">
                 Recent interactions
               </p>
-              <p className="text-xs text-stone-400">
-                {interactions.length} total
-              </p>
+            <button
+              type="button"
+              onClick={() => setShowHistoryModal(true)}
+              className="text-xs text-stone-500 hover:text-stone-900"
+            >
+              View all
+            </button>
             </div>
 
             <div className="space-y-2">
-              {interactions.slice(0, 3).map((interaction) => (
-                <div
-                  key={interaction.id}
-                  className="rounded-lg bg-white p-3 text-sm text-stone-600"
-                >
-                  <p>
-                    <span className="font-medium capitalize text-stone-900">
-                      {interaction.type}
-                    </span>{" "}
-                    · {formatLastInteraction(interaction.date)}
-                  </p>
+{interactions.slice(0, 3).map((interaction) => (
+  <div
+    key={interaction.id}
+    className="rounded-lg bg-white p-3 text-sm text-stone-600"
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p>
+          <span className="font-medium capitalize text-stone-900">
+            {interaction.type}
+          </span>{" "}
+          · {formatLastInteraction(interaction.date)}
+        </p>
 
-                  {interaction.location && (
-                    <p className="mt-1 text-xs text-stone-500">
-                      📍 {interaction.location}
-                    </p>
-                  )}
+        {interaction.location && (
+          <p className="mt-1 text-xs text-stone-500">
+            📍 {interaction.location}
+          </p>
+        )}
 
-                  {interaction.notes && (
-                    <p className="mt-1 text-xs text-stone-500">
-                      {interaction.notes}
-                    </p>
-                  )}
-                </div>
-              ))}
+        {interaction.notes && (
+          <p className="mt-1 text-xs text-stone-500">
+            {interaction.notes}
+          </p>
+        )}
+      </div>
+
+      <div className="flex shrink-0 gap-2">
+        <button
+          type="button"
+          onClick={() => handleEditInteraction(interaction)}
+          className="text-xs text-stone-500 hover:text-stone-900"
+        >
+          Edit
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleDeleteInteraction(interaction.id)}
+          className="text-xs text-red-500 hover:text-red-600"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+))}
             </div>
           </div>
         )}
@@ -433,9 +514,10 @@ export default function FriendCard({
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-stone-900">
-                  Log {logType === "text" ? "Text" : "Hangout"}
-                </h2>
+            <h2 className="text-xl font-semibold text-stone-900">
+              {editingInteractionId ? "Edit" : "Log"}{" "}
+              {logType === "text" ? "Text" : "Hangout"}
+            </h2>
 
                 <p className="mt-1 text-sm text-stone-500">
                   Confirm now, or add details first.
@@ -450,7 +532,16 @@ export default function FriendCard({
                 ×
               </button>
             </div>
+            <label className="mt-5 block space-y-1">
+              <span className="text-sm">Date</span>
 
+              <input
+                type="date"
+                className="w-full rounded-lg border px-3 py-2"
+                value={logDate}
+                onChange={(e) => setLogDate(e.target.value)}
+              />
+            </label>
             {logType === "hangout" && (
               <label className="mt-5 block space-y-1">
                 <span className="text-sm">Where did you hang out?</span>
@@ -493,12 +584,89 @@ export default function FriendCard({
                 onClick={handleLogInteraction}
                 className="rounded-xl bg-stone-900 px-4 py-3 text-sm text-white hover:bg-stone-700"
               >
-                Confirm
+                {editingInteractionId ? "Save Changes" : "Confirm"}
               </button>
             </div>
           </div>
         </div>
       )}
+    {showHistoryModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-stone-900">
+            Interaction History
+          </h2>
+          <p className="mt-1 text-sm text-stone-500">
+            {friend.name} · {interactions.length} total
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowHistoryModal(false)}
+          className="rounded-full px-2 text-xl text-stone-500 hover:bg-stone-100"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {interactions.map((interaction) => (
+          <div
+            key={interaction.id}
+            className="rounded-xl border bg-stone-50 p-4 text-sm"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p>
+                  <span className="font-medium capitalize text-stone-900">
+                    {interaction.type}
+                  </span>{" "}
+                  · {formatLastInteraction(interaction.date)}
+                </p>
+
+                {interaction.location && (
+                  <p className="mt-1 text-xs text-stone-500">
+                    📍 {interaction.location}
+                  </p>
+                )}
+
+                {interaction.notes && (
+                  <p className="mt-1 text-xs text-stone-500">
+                    {interaction.notes}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHistoryModal(false);
+                    handleEditInteraction(interaction);
+                  }}
+                  className="text-xs text-stone-500 hover:text-stone-900"
+                >
+                  Edit
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDeleteInteraction(interaction.id)}
+                  className="text-xs text-red-500 hover:text-red-600"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
     </>
   );
 }

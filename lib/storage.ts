@@ -30,7 +30,7 @@ export function updateFriend(updatedFriend: Friend) {
     friend.id === updatedFriend.id ? updatedFriend : friend
   );
 
-  saveFriends(updatedFriends);
+  localStorage.setItem("friends", JSON.stringify(updatedFriends));
 }
 
 export function deleteFriend(friendId: string) {

@@ -119,10 +119,43 @@ export default function Home() {
   const overdue = friends.filter(
     (friend) => getHealthScore(friend) < 45
   ).length;
+  
+const nextBestCheckIn = [...friends]
+  .sort((a, b) => getUrgency(b) - getUrgency(a))[0];
 
-  const suggestedFriend = [...friends].sort(
-    (a, b) => getHealthScore(a) - getHealthScore(b)
-  )[0];
+function getRecommendationReason(friend?: Friend) {
+  if (!friend) return "";
+
+  const textDays = friend.lastTexted
+    ? Math.floor(
+        (Date.now() - new Date(friend.lastTexted).getTime()) /
+          (1000 * 60 * 60 * 24)
+      )
+    : Infinity;
+
+  const hangoutDays = friend.lastHungOut
+    ? Math.floor(
+        (Date.now() - new Date(friend.lastHungOut).getTime()) /
+          (1000 * 60 * 60 * 24)
+      )
+    : Infinity;
+
+  const textOverdue =
+    textDays > friend.textFrequencyDays
+      ? textDays - friend.textFrequencyDays
+      : 0;
+
+  const hangoutOverdue =
+    hangoutDays > friend.hangoutFrequencyDays
+      ? hangoutDays - friend.hangoutFrequencyDays
+      : 0;
+
+  if (textOverdue >= hangoutOverdue) {
+    return `You usually text every ${friend.textFrequencyDays} days, but it has been ${textDays} days.`;
+  }
+
+  return `You usually hang out every ${friend.hangoutFrequencyDays} days, but it has been ${hangoutDays} days.`;
+}
 
   return (
     <main className="min-h-screen bg-stone-50 px-6 py-8">
@@ -154,29 +187,56 @@ export default function Home() {
           <DashboardCard label="Average Health" value={`${averageHealth}%`} />
         </section>
 
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-stone-900">
-            Smart Reminder
-          </h2>
+ <section className="rounded-2xl border bg-white p-6 shadow-sm">
+  <div className="flex items-start justify-between gap-4">
+    <div>
+      <h2 className="text-lg font-semibold text-stone-900">
+        Next Best Check-in
+      </h2>
 
-          {suggestedFriend ? (
-            <p className="mt-2 text-stone-600">
-              Check in with{" "}
-              <span className="font-semibold text-stone-900">
-                {suggestedFriend.name}
-              </span>{" "}
-              soon. Their relationship health score is{" "}
-              <span className="font-semibold">
-                {getHealthScore(suggestedFriend)}%
-              </span>
-              .
-            </p>
-          ) : (
-            <p className="mt-2 text-stone-500">
-              Add your first friend to get smart reminders.
-            </p>
-          )}
-        </section>
+      <p className="mt-1 text-sm text-stone-500">
+        A suggested friend to reconnect with.
+      </p>
+    </div>
+  </div>
+
+  {nextBestCheckIn ? (
+    <div className="mt-5 rounded-2xl bg-stone-50 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xl font-semibold text-stone-900">
+            {nextBestCheckIn.name}
+          </p>
+
+          <p className="mt-1 text-sm capitalize text-stone-500">
+            {nextBestCheckIn.category}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-stone-900 px-4 py-3 text-center text-white">
+          <p className="text-2xl font-bold">
+            {getHealthScore(nextBestCheckIn)}%
+          </p>
+          <p className="text-xs">Health</p>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border bg-white p-4">
+        <p className="text-sm font-medium text-stone-900">
+          Why this recommendation?
+        </p>
+
+        <p className="mt-1 text-sm text-stone-600">
+          {getRecommendationReason(nextBestCheckIn)}
+        </p>
+      </div>
+    </div>
+  ) : (
+    <p className="mt-4 text-stone-500">
+      Add friends to receive smart recommendations.
+    </p>
+  )}
+</section>
 
         <section className="space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
