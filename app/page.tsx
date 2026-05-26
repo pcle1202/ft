@@ -1,329 +1,393 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useUser, UserButton } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Friend, FriendCategory } from "@/types/friend";
 import FriendForm from "@/components/FriendForm";
 import FriendCard from "@/components/FriendCard";
-import {
-  addFriend,
-  deleteFriend,
-  getFriends,
-  updateFriend,
-} from "@/lib/storage";
+import { getFriends, addFriend, updateFriend, deleteFriend } from "@/lib/storage";
+import AppNav from "@/components/AppNav";
 
 function getDaysAgo(date?: string) {
   if (!date) return Infinity;
-
-  return Math.floor(
-    (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24)
-  );
+  return Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function getUrgency(friend: Friend) {
-  const textDays = getDaysAgo(friend.lastTexted);
-  const hangoutDays = getDaysAgo(friend.lastHungOut);
-
-  const textOverdueBy = textDays - friend.textFrequencyDays;
-  const hangoutOverdueBy = hangoutDays - friend.hangoutFrequencyDays;
-
-  return Math.max(textOverdueBy, hangoutOverdueBy);
+  const textOverdue = getDaysAgo(friend.lastTexted) - friend.textFrequencyDays;
+  const hangoutOverdue = getDaysAgo(friend.lastHungOut) - friend.hangoutFrequencyDays;
+  return Math.max(textOverdue, hangoutOverdue);
 }
 
 function getHealthScore(friend: Friend) {
   const urgency = getUrgency(friend);
   if (urgency === Infinity) return 0;
-
-  const score = 100 - Math.max(urgency, 0) * 8;
-  return Math.max(Math.min(score, 100), 0);
+  return Math.max(Math.min(100 - Math.max(urgency, 0) * 8, 100), 0);
 }
 
-function getStatus(score: number) {
-  if (score >= 75) return "Healthy";
-  if (score >= 45) return "Needs attention";
-  return "Overdue";
+function getRecommendationReason(friend: Friend): string {
+  const textDays = getDaysAgo(friend.lastTexted);
+  const hangoutDays = getDaysAgo(friend.lastHungOut);
+  const textOverdue = textDays > friend.textFrequencyDays ? textDays - friend.textFrequencyDays : 0;
+  const hangoutOverdue = hangoutDays > friend.hangoutFrequencyDays ? hangoutDays - friend.hangoutFrequencyDays : 0;
+
+  if (textOverdue >= hangoutOverdue) {
+    return `Usually text every ${friend.textFrequencyDays} days — it's been ${textDays === Infinity ? "a while" : `${textDays} days`}.`;
+  }
+  return `Usually hang out every ${friend.hangoutFrequencyDays} days — it's been ${hangoutDays === Infinity ? "a while" : `${hangoutDays} days`}.`;
 }
 
-function DashboardCard({
-  label,
-  value,
+function healthDotClass(score: number): string {
+  if (score >= 75) return "bg-sage";
+  if (score >= 45) return "bg-goldenrod";
+  return "bg-rust";
+}
+
+function FriendSidebarItem({
+  friend,
+  isSelected,
+  onClick,
 }: {
-  label: string;
-  value: string | number;
+  friend: Friend;
+  isSelected: boolean;
+  onClick: () => void;
 }) {
+  const score = getHealthScore(friend);
+  const dotClass = healthDotClass(score);
+  const lastContact = friend.lastTexted || friend.lastHungOut;
+  const days = getDaysAgo(lastContact);
+  const lastLabel = days === Infinity ? "Never contacted" : days === 0 ? "Today" : `${days}d ago`;
+  const catShort =
+    friend.category === "close friend"
+      ? "close"
+      : friend.category === "classmate"
+        ? "school"
+        : friend.category;
+
   return (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm">
-      <p className="text-sm text-stone-500">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-stone-900">{value}</p>
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-4 py-3 flex items-center gap-3 border-l-2 transition-colors ${
+        isSelected
+          ? "bg-cream border-bark"
+          : "border-transparent hover:bg-cream/70"
+      }`}
+    >
+      <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${dotClass}`} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-earth">{friend.name}</p>
+        <p className="text-xs text-clay">{lastLabel}</p>
+      </div>
+      <span className="shrink-0 text-xs text-clay capitalize">{catShort}</span>
+    </button>
+  );
+}
+
+function WelcomePanel({
+  friends,
+  totalFriends,
+  needAttention,
+  overdue,
+  nextBestCheckIn,
+  onAddFirst,
+  onSelectFriend,
+}: {
+  friends: Friend[];
+  totalFriends: number;
+  needAttention: number;
+  overdue: number;
+  nextBestCheckIn: Friend | undefined;
+  onAddFirst: () => void;
+  onSelectFriend: (id: string) => void;
+}) {
+  if (friends.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center px-12 py-16">
+        <div className="w-20 h-20 rounded-full bg-parchment flex items-center justify-center mb-6">
+          <span className="font-serif text-4xl text-bark">k</span>
+        </div>
+        <h2 className="font-serif text-3xl text-earth mb-3">Welcome to friendkeeper</h2>
+        <p className="text-clay mb-8 max-w-sm leading-relaxed">
+          Start tracking your friendships by adding someone you care about.
+        </p>
+        <button
+          onClick={onAddFirst}
+          className="rounded-xl bg-bark text-cream px-7 py-3 text-sm font-medium hover:bg-earth transition-colors"
+        >
+          Add your first friend
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-10 py-10 max-w-2xl">
+      <div className="mb-8">
+        <h2 className="font-serif text-4xl text-earth">Good to see you.</h2>
+        <p className="text-clay mt-2">Here's how your circle is doing.</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="rounded-2xl bg-white border border-sand p-5">
+          <p className="text-xs text-clay uppercase tracking-wider">Friends</p>
+          <p className="text-3xl font-bold text-earth mt-2">{totalFriends}</p>
+        </div>
+        <div
+          className="rounded-2xl border border-sand p-5"
+          style={{ backgroundColor: "#FBF0E0" }}
+        >
+          <p className="text-xs text-clay uppercase tracking-wider">Needs attention</p>
+          <p className="text-3xl font-bold text-goldenrod mt-2">{needAttention}</p>
+        </div>
+        <div
+          className="rounded-2xl border border-sand p-5"
+          style={{ backgroundColor: "#FAECE9" }}
+        >
+          <p className="text-xs text-clay uppercase tracking-wider">Overdue</p>
+          <p className="text-3xl font-bold text-rust mt-2">{overdue}</p>
+        </div>
+      </div>
+
+      {nextBestCheckIn && (
+        <div className="rounded-2xl bg-white border border-sand p-6">
+          <h3 className="font-serif text-lg text-earth mb-4">Who to reach out to</h3>
+          <button
+            onClick={() => onSelectFriend(nextBestCheckIn.id)}
+            className="flex items-center gap-4 w-full text-left group"
+          >
+            <div className="w-12 h-12 rounded-full bg-bark flex items-center justify-center shrink-0">
+              <span className="font-serif text-xl text-cream">{nextBestCheckIn.name[0]}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-earth group-hover:underline">
+                {nextBestCheckIn.name}
+              </p>
+              <p className="text-sm text-clay mt-0.5 truncate">
+                {getRecommendationReason(nextBestCheckIn)}
+              </p>
+            </div>
+            <span className="text-clay text-sm shrink-0">View →</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function Home() {
+  const { isLoaded, isSignedIn, user } = useUser();
+  const router = useRouter();
+  const [isGuest, setIsGuest] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<FriendCategory | "all">(
-    "all"
-  );
+  const [categoryFilter, setCategoryFilter] = useState<FriendCategory | "all">("all");
   const [search, setSearch] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setFriends(getFriends());
-  }, []);
+    if (!isLoaded) return;
+    const guestMode = localStorage.getItem("friendkeeper-guest") === "1";
+    if (!isSignedIn && !guestMode) {
+      router.push("/sign-in");
+      return;
+    }
+    const uid = isSignedIn ? user!.id : "guest";
+    setIsGuest(!isSignedIn && guestMode);
+    setUserId(uid);
+    setFriends(getFriends(uid));
+    setIsLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn]);
+
+  function reload(uid: string) {
+    setFriends(getFriends(uid));
+  }
 
   function handleAddFriend(friend: Friend) {
-    addFriend(friend);
-    setFriends(getFriends());
+    if (!userId) return;
+    addFriend(friend, userId);
+    reload(userId);
     setShowAddForm(false);
+    setSelectedFriendId(friend.id);
   }
 
   function handleUpdateFriend(friend: Friend) {
-    updateFriend(friend);
-    setFriends(getFriends());
+    if (!userId) return;
+    updateFriend(friend, userId);
+    reload(userId);
   }
 
   function handleDeleteFriend(friendId: string) {
-    deleteFriend(friendId);
-    setFriends(getFriends());
+    if (!userId) return;
+    deleteFriend(friendId, userId);
+    if (selectedFriendId === friendId) setSelectedFriendId(null);
+    reload(userId);
   }
 
-  const filteredFriends = friends.filter((friend) => {
-    const matchesCategory =
-      categoryFilter === "all" || friend.category === categoryFilter;
+  function exitGuestMode() {
+    localStorage.removeItem("friendkeeper-guest");
+    router.push("/sign-in");
+  }
 
-    const matchesSearch = friend.name
-      .toLowerCase()
-      .includes(search.toLowerCase());
-
+  const filteredFriends = friends.filter((f) => {
+    const matchesCategory = categoryFilter === "all" || f.category === categoryFilter;
+    const matchesSearch = f.name.toLowerCase().includes(search.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
-  const sortedFriends = [...filteredFriends].sort(
-    (a, b) => getUrgency(b) - getUrgency(a)
-  );
+  const sortedFriends = [...filteredFriends].sort((a, b) => getUrgency(b) - getUrgency(a));
 
   const totalFriends = friends.length;
-
-  const averageHealth =
-    friends.length === 0
-      ? 0
-      : Math.round(
-          friends.reduce((sum, friend) => sum + getHealthScore(friend), 0) /
-            friends.length
-        );
-
-  const needAttention = friends.filter((friend) => {
-    const score = getHealthScore(friend);
-    return score < 75 && score >= 45;
+  const needAttention = friends.filter((f) => {
+    const s = getHealthScore(f);
+    return s < 75 && s >= 45;
   }).length;
+  const overdue = friends.filter((f) => getHealthScore(f) < 45).length;
+  const nextBestCheckIn = [...friends].sort((a, b) => getUrgency(b) - getUrgency(a))[0];
 
-  const overdue = friends.filter(
-    (friend) => getHealthScore(friend) < 45
-  ).length;
-  
-const nextBestCheckIn = [...friends]
-  .sort((a, b) => getUrgency(b) - getUrgency(a))[0];
+  const selectedFriend = friends.find((f) => f.id === selectedFriendId) ?? null;
 
-function getRecommendationReason(friend?: Friend) {
-  if (!friend) return "";
-
-  const textDays = friend.lastTexted
-    ? Math.floor(
-        (Date.now() - new Date(friend.lastTexted).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
-    : Infinity;
-
-  const hangoutDays = friend.lastHungOut
-    ? Math.floor(
-        (Date.now() - new Date(friend.lastHungOut).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
-    : Infinity;
-
-  const textOverdue =
-    textDays > friend.textFrequencyDays
-      ? textDays - friend.textFrequencyDays
-      : 0;
-
-  const hangoutOverdue =
-    hangoutDays > friend.hangoutFrequencyDays
-      ? hangoutDays - friend.hangoutFrequencyDays
-      : 0;
-
-  if (textOverdue >= hangoutOverdue) {
-    return `You usually text every ${friend.textFrequencyDays} days, but it has been ${textDays} days.`;
+  if (isLoading) {
+    return <div className="flex h-full items-center justify-center bg-cream" />;
   }
 
-  return `You usually hang out every ${friend.hangoutFrequencyDays} days, but it has been ${hangoutDays} days.`;
-}
-
   return (
-    <main className="min-h-screen bg-stone-50 px-6 py-8">
-      <div className="mx-auto max-w-6xl space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-stone-900">
-            Friendship Tracker
-          </h1>
-          <p className="mt-2 text-stone-600">
-            Track relationship health, reminders, and recent interactions.
+    <div className="flex flex-col h-full">
+      {/* Guest banner */}
+      {isGuest && (
+        <div className="shrink-0 bg-parchment border-b border-sand px-6 py-2.5 flex items-center justify-between gap-4">
+          <p className="text-xs text-clay">
+            You&apos;re using guest mode. Sign in to keep your data tied to your account.
           </p>
+          <div className="flex items-center gap-4 shrink-0">
+            <a
+              href="/sign-in"
+              className="text-xs text-bark underline underline-offset-2 hover:text-earth transition-colors"
+            >
+              Sign in
+            </a>
+            <button
+              onClick={exitGuestMode}
+              className="text-xs text-clay hover:text-earth transition-colors"
+            >
+              Exit guest
+            </button>
+          </div>
         </div>
+      )}
 
-        {friends.length > 0 && (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="rounded-xl bg-stone-900 px-5 py-3 text-white shadow-sm hover:bg-stone-700"
-          >
-            + Add Friend
-          </button>
-        )}
-      </header>
-
-        <section className="grid gap-4 md:grid-cols-4">
-          <DashboardCard label="Total Friends" value={totalFriends} />
-          <DashboardCard label="Need Attention" value={needAttention} />
-          <DashboardCard label="Overdue" value={overdue} />
-          <DashboardCard label="Average Health" value={`${averageHealth}%`} />
-        </section>
-
- <section className="rounded-2xl border bg-white p-6 shadow-sm">
-  <div className="flex items-start justify-between gap-4">
-    <div>
-      <h2 className="text-lg font-semibold text-stone-900">
-        Next Best Check-in
-      </h2>
-
-      <p className="mt-1 text-sm text-stone-500">
-        A suggested friend to reconnect with.
-      </p>
-    </div>
-  </div>
-
-  {nextBestCheckIn ? (
-    <div className="mt-5 rounded-2xl bg-stone-50 p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xl font-semibold text-stone-900">
-            {nextBestCheckIn.name}
-          </p>
-
-          <p className="mt-1 text-sm capitalize text-stone-500">
-            {nextBestCheckIn.category}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-stone-900 px-4 py-3 text-center text-white">
-          <p className="text-2xl font-bold">
-            {getHealthScore(nextBestCheckIn)}%
-          </p>
-          <p className="text-xs">Health</p>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-xl border bg-white p-4">
-        <p className="text-sm font-medium text-stone-900">
-          Why this recommendation?
-        </p>
-
-        <p className="mt-1 text-sm text-stone-600">
-          {getRecommendationReason(nextBestCheckIn)}
-        </p>
-      </div>
-    </div>
-  ) : (
-    <p className="mt-4 text-stone-500">
-      Add friends to receive smart recommendations.
-    </p>
-  )}
-</section>
-
-        <section className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-1 min-h-0 bg-cream">
+        {/* Sidebar */}
+        <aside className="w-72 shrink-0 flex flex-col border-r border-sand bg-parchment">
+          {/* Logo */}
+          <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-2">
             <div>
-              <h2 className="text-xl font-semibold text-stone-900">
-                Your Friends
-              </h2>
-              <p className="text-sm text-stone-500">
-                Sorted by who needs attention most.
-              </p>
+              <h1 className="font-serif text-2xl text-earth tracking-wide">friendkeeper</h1>
+              <p className="text-xs text-clay mt-0.5">your people</p>
             </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <input
-                type="text"
-                placeholder="Search friends..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="rounded-lg border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-stone-300"
-              />
-
-              <select
-                className="rounded-lg border bg-white px-3 py-2 text-sm shadow-sm"
-                value={categoryFilter}
-                onChange={(e) =>
-                  setCategoryFilter(e.target.value as FriendCategory | "all")
-                }
+            {isSignedIn ? (
+              <UserButton />
+            ) : (
+              <button
+                onClick={exitGuestMode}
+                className="text-xs text-clay hover:text-earth transition-colors mt-1"
               >
-                <option value="all">All</option>
-                <option value="close friend">Close friend</option>
-                <option value="family">Family</option>
-                <option value="classmate">Classmate</option>
-                <option value="coworker">Coworker</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
+                Sign in
+              </button>
+            )}
           </div>
 
-          {friends.length === 0 ? (
-            <div className="rounded-2xl border border-dashed bg-white p-10 text-center shadow-sm">
-              <h3 className="text-xl font-semibold text-stone-900">
-                No friends added yet
-              </h3>
-              <p className="mt-2 text-stone-500">
-                Start tracking your friendships by adding your first friend.
-              </p>
+          <AppNav />
 
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="mt-5 rounded-xl bg-stone-900 px-5 py-3 text-white hover:bg-stone-700"
-              >
-                Add Friend
-              </button>
-            </div>
-          ) : sortedFriends.length === 0 ? (
-            <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-stone-500">
-              No friends match your search.
-            </div>
+          {/* Search + Filter */}
+          <div className="px-4 pb-4 pt-3 space-y-2 border-b border-sand">
+            <input
+              type="text"
+              placeholder="Search friends…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-earth placeholder:text-clay outline-none focus:ring-2 focus:ring-bark/30"
+            />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as FriendCategory | "all")}
+              className="w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-earth outline-none"
+            >
+              <option value="all">All categories</option>
+              <option value="close friend">Close friend</option>
+              <option value="family">Family</option>
+              <option value="classmate">Classmate</option>
+              <option value="coworker">Coworker</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* Friends list */}
+          <div className="flex-1 overflow-y-auto py-2">
+            {!isLoading && sortedFriends.length === 0 && friends.length > 0 && (
+              <p className="px-5 py-4 text-sm text-clay">No matches.</p>
+            )}
+            {sortedFriends.map((friend) => (
+              <FriendSidebarItem
+                key={friend.id}
+                friend={friend}
+                isSelected={selectedFriendId === friend.id}
+                onClick={() => setSelectedFriendId(friend.id)}
+              />
+            ))}
+          </div>
+
+          {/* Add button */}
+          <div className="p-4 border-t border-sand">
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="w-full rounded-xl bg-bark text-cream py-2.5 text-sm font-medium hover:bg-earth transition-colors"
+            >
+              + Add friend
+            </button>
+          </div>
+        </aside>
+
+        {/* Detail panel */}
+        <main className="flex-1 overflow-y-auto">
+          {selectedFriend ? (
+            <FriendCard
+              key={selectedFriendId!}
+              friend={selectedFriend}
+              onUpdateFriend={handleUpdateFriend}
+              onDeleteFriend={handleDeleteFriend}
+            />
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {sortedFriends.map((friend) => (
-                <FriendCard
-                  key={friend.id}
-                  friend={friend}
-                  onUpdateFriend={handleUpdateFriend}
-                  onDeleteFriend={handleDeleteFriend}
-                />
-              ))}
-            </div>
+            <WelcomePanel
+              friends={friends}
+              totalFriends={totalFriends}
+              needAttention={needAttention}
+              overdue={overdue}
+              nextBestCheckIn={nextBestCheckIn}
+              onAddFirst={() => setShowAddForm(true)}
+              onSelectFriend={setSelectedFriendId}
+            />
           )}
-        </section>
+        </main>
       </div>
 
+      {/* Add friend modal */}
       {showAddForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <button
               onClick={() => setShowAddForm(false)}
-              className="absolute right-4 top-4 rounded-full px-2 text-xl text-stone-500 hover:bg-stone-100"
+              className="absolute right-4 top-4 text-xl text-clay hover:text-earth leading-none"
             >
               ×
             </button>
-
             <FriendForm onAddFriend={handleAddFriend} />
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

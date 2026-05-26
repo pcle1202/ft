@@ -7,17 +7,17 @@ type FriendFormProps = {
   onAddFriend: (friend: Friend) => void;
 };
 
+const INPUT_CLASS =
+  "w-full rounded-xl border border-sand bg-white px-4 py-2.5 text-sm text-earth placeholder:text-clay outline-none focus:ring-2 focus:ring-bark/30 transition";
+
 export default function FriendForm({ onAddFriend }: FriendFormProps) {
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [category, setCategory] = useState<FriendCategory>("close friend");
-
   const [lastTexted, setLastTexted] = useState("");
   const [lastHungOut, setLastHungOut] = useState("");
-
   const [textAmount, setTextAmount] = useState(14);
   const [textUnit, setTextUnit] = useState<"days" | "months">("days");
-
   const [hangoutAmount, setHangoutAmount] = useState(1);
   const [hangoutUnit, setHangoutUnit] = useState<"days" | "months">("months");
 
@@ -32,8 +32,7 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
       lastTexted: lastTexted ? new Date(lastTexted).toISOString() : undefined,
       lastHungOut: lastHungOut ? new Date(lastHungOut).toISOString() : undefined,
       textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
-      hangoutFrequencyDays:
-        hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
+      hangoutFrequencyDays: hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
       createdAt: new Date().toISOString(),
       interactions: [],
     };
@@ -52,71 +51,64 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
   }
 
   return (
-    
     <form onSubmit={handleSubmit} className="space-y-5">
-      
-      <div>
-      <h2 className="text-2xl font-semibold text-stone-900">
-        Add Friend
-      </h2>
+      <div className="mb-2">
+        <h2 className="font-serif text-2xl text-earth">Add someone</h2>
+        <p className="text-sm text-clay mt-1">Someone you want to keep close.</p>
+      </div>
 
-      <p className="mt-1 text-sm text-stone-500">
-        Add someone you want to keep in touch with.
-      </p>
-    </div>
-    <label className="block space-y-1">
-      <span className="text-sm">Name</span>
-          <input
-            className="w-full rounded-lg border px-3 py-2"
-            placeholder="Friend's name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-    </label>
+      <label className="block space-y-1.5">
+        <span className="text-sm font-medium text-clay">Name</span>
+        <input
+          className={INPUT_CLASS}
+          placeholder="Their name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+      </label>
 
-    <label className="block space-y-1">
-      <span className="text-sm">Notes</span>
+      <label className="block space-y-1.5">
+        <span className="text-sm font-medium text-clay">Notes</span>
+        <textarea
+          className={INPUT_CLASS + " resize-none"}
+          rows={3}
+          placeholder="Anything important to remember?"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </label>
 
-      <textarea
-        className="w-full rounded-lg border px-3 py-2"
-        placeholder="Anything important to remember?"
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-      />
-    </label>
+      <label className="block space-y-1.5">
+        <span className="text-sm font-medium text-clay">Category</span>
+        <select
+          className={INPUT_CLASS}
+          value={category}
+          onChange={(e) => setCategory(e.target.value as FriendCategory)}
+        >
+          <option value="close friend">Close friend</option>
+          <option value="family">Family</option>
+          <option value="classmate">Classmate</option>
+          <option value="coworker">Coworker</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
 
-    <label className="space-y-1 block">
-      <span className="text-sm">Category</span>
-
-      <select
-        className="w-full rounded-lg border px-3 py-2"
-        value={category}
-        onChange={(e) => setCategory(e.target.value as FriendCategory)}
-      >
-        <option value="close friend">Close friend</option>
-        <option value="family">Family</option>
-        <option value="classmate">Classmate</option>
-        <option value="coworker">Coworker</option>
-        <option value="other">Other</option>
-      </select>
-    </label>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1">
-          <span className="text-sm">Last texted</span>
+        <label className="space-y-1.5">
+          <span className="text-sm font-medium text-clay">Last texted</span>
           <input
             type="date"
-            className="w-full rounded-lg border px-3 py-2"
+            className={INPUT_CLASS}
             value={lastTexted}
             onChange={(e) => setLastTexted(e.target.value)}
           />
         </label>
-
-        <label className="space-y-1">
-          <span className="text-sm">Last hung out</span>
+        <label className="space-y-1.5">
+          <span className="text-sm font-medium text-clay">Last hung out</span>
           <input
             type="date"
-            className="w-full rounded-lg border px-3 py-2"
+            className={INPUT_CLASS}
             value={lastHungOut}
             onChange={(e) => setLastHungOut(e.target.value)}
           />
@@ -124,24 +116,20 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
       </div>
 
       <div className="space-y-3">
-        <label className="space-y-1 block">
-          <span className="text-sm">Text every</span>
-
-          <div className="grid grid-cols-[minmax(90px,1fr)_120px] gap-2">
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-clay">Text every</span>
+          <div className="grid grid-cols-[1fr_130px] gap-2">
             <input
               type="number"
-              className="w-full rounded-lg border px-3 py-2"
+              className={INPUT_CLASS}
               value={textAmount}
-              onChange={(e) => setTextAmount(Number(e.target.value))}
               min={1}
+              onChange={(e) => setTextAmount(Number(e.target.value))}
             />
-
             <select
-              className="w-full rounded-lg border px-3 py-2"
+              className={INPUT_CLASS}
               value={textUnit}
-              onChange={(e) =>
-                setTextUnit(e.target.value as "days" | "months")
-              }
+              onChange={(e) => setTextUnit(e.target.value as "days" | "months")}
             >
               <option value="days">days</option>
               <option value="months">months</option>
@@ -149,24 +137,20 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
           </div>
         </label>
 
-        <label className="space-y-1 block">
-          <span className="text-sm">Hang out every</span>
-
-          <div className="grid grid-cols-[minmax(90px,1fr)_120px] gap-2">
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-clay">Hang out every</span>
+          <div className="grid grid-cols-[1fr_130px] gap-2">
             <input
               type="number"
-              className="w-full rounded-lg border px-3 py-2"
+              className={INPUT_CLASS}
               value={hangoutAmount}
-              onChange={(e) => setHangoutAmount(Number(e.target.value))}
               min={1}
+              onChange={(e) => setHangoutAmount(Number(e.target.value))}
             />
-
             <select
-              className="w-full rounded-lg border px-3 py-2"
+              className={INPUT_CLASS}
               value={hangoutUnit}
-              onChange={(e) =>
-                setHangoutUnit(e.target.value as "days" | "months")
-              }
+              onChange={(e) => setHangoutUnit(e.target.value as "days" | "months")}
             >
               <option value="days">days</option>
               <option value="months">months</option>
@@ -177,9 +161,9 @@ export default function FriendForm({ onAddFriend }: FriendFormProps) {
 
       <button
         type="submit"
-        className="w-full rounded-xl bg-stone-900 px-4 py-3 text-white transition hover:bg-stone-700"
+        className="w-full rounded-xl bg-bark text-cream py-3 text-sm font-medium hover:bg-earth transition-colors"
       >
-        Add friend
+        Add to my circle
       </button>
     </form>
   );

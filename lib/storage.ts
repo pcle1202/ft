@@ -1,42 +1,37 @@
 import { Friend } from "@/types/friend";
 
-const STORAGE_KEY = "friendship-tracker-friends";
+function friendsKey(userId: string) {
+  return `friendkeeper-friends-${userId}`;
+}
 
-export function getFriends(): Friend[] {
+export function getFriends(userId: string): Friend[] {
   if (typeof window === "undefined") return [];
-
-  const stored = localStorage.getItem(STORAGE_KEY);
-
-  if (!stored) return [];
-
-  return JSON.parse(stored);
+  try {
+    const raw = localStorage.getItem(friendsKey(userId));
+    return raw ? (JSON.parse(raw) as Friend[]) : [];
+  } catch {
+    return [];
+  }
 }
 
-export function saveFriends(friends: Friend[]) {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(friends));
+function saveFriends(userId: string, friends: Friend[]): void {
+  localStorage.setItem(friendsKey(userId), JSON.stringify(friends));
 }
 
-export function addFriend(friend: Friend) {
-  const friends = getFriends();
-  saveFriends([...friends, friend]);
+export function addFriend(friend: Friend, userId: string): void {
+  saveFriends(userId, [...getFriends(userId), friend]);
 }
 
-export function updateFriend(updatedFriend: Friend) {
-  const friends = getFriends();
-
-  const updatedFriends = friends.map((friend) =>
-    friend.id === updatedFriend.id ? updatedFriend : friend
+export function updateFriend(friend: Friend, userId: string): void {
+  saveFriends(
+    userId,
+    getFriends(userId).map((f) => (f.id === friend.id ? friend : f))
   );
-
-  localStorage.setItem("friends", JSON.stringify(updatedFriends));
 }
 
-export function deleteFriend(friendId: string) {
-  const friends = getFriends();
-
-  const updatedFriends = friends.filter((friend) => friend.id !== friendId);
-
-  saveFriends(updatedFriends);
+export function deleteFriend(friendId: string, userId: string): void {
+  saveFriends(
+    userId,
+    getFriends(userId).filter((f) => f.id !== friendId)
+  );
 }
