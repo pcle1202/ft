@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser, UserButton } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Friend, FriendCategory } from "@/types/friend";
 import FriendForm from "@/components/FriendForm";
 import FriendCard from "@/components/FriendCard";
 import { getFriends, addFriend, updateFriend, deleteFriend } from "@/lib/storage";
+import { loadSampleData, clearSampleData, hasSampleData } from "@/lib/sampleData";
 import AppNav from "@/components/AppNav";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getDaysAgo(date?: string) {
   if (!date) return Infinity;
@@ -33,16 +36,29 @@ function getRecommendationReason(friend: Friend): string {
   const hangoutOverdue = hangoutDays > friend.hangoutFrequencyDays ? hangoutDays - friend.hangoutFrequencyDays : 0;
 
   if (textOverdue >= hangoutOverdue) {
-    return `Usually text every ${friend.textFrequencyDays} days — it's been ${textDays === Infinity ? "a while" : `${textDays} days`}.`;
+    return `Usually text every ${friend.textFrequencyDays} days, been ${textDays === Infinity ? "a while" : `${textDays} days`}.`;
   }
-  return `Usually hang out every ${friend.hangoutFrequencyDays} days — it's been ${hangoutDays === Infinity ? "a while" : `${hangoutDays} days`}.`;
+  return `Usually hang out every ${friend.hangoutFrequencyDays} days, been ${hangoutDays === Infinity ? "a while" : `${hangoutDays} days`}.`;
 }
 
-function healthDotClass(score: number): string {
-  if (score >= 75) return "bg-sage";
-  if (score >= 45) return "bg-goldenrod";
-  return "bg-rust";
+const AVATAR_PALETTE = [
+  "#7A5A3F",
+  "#5E6E5A",
+  "#A06A4A",
+  "#604838",
+  "#7C5840",
+  "#4A5E7A",
+  "#7A4A5E",
+  "#5A5E7A",
+];
+
+function friendColor(f: Friend): string {
+  if (f.color) return f.color;
+  const h = f.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
 }
+
+// ─── FriendSidebarItem ────────────────────────────────────────────────────────
 
 function FriendSidebarItem({
   friend,
@@ -54,35 +70,101 @@ function FriendSidebarItem({
   onClick: () => void;
 }) {
   const score = getHealthScore(friend);
-  const dotClass = healthDotClass(score);
-  const lastContact = friend.lastTexted || friend.lastHungOut;
-  const days = getDaysAgo(lastContact);
-  const lastLabel = days === Infinity ? "Never contacted" : days === 0 ? "Today" : `${days}d ago`;
-  const catShort =
-    friend.category === "close friend"
-      ? "close"
-      : friend.category === "classmate"
-        ? "school"
-        : friend.category;
+  const color = friendColor(friend);
+  const statusColor = score >= 75 ? "#6BAF85" : score >= 45 ? "#D4A855" : "#C46060";
+  const days = getDaysAgo(friend.lastTexted || friend.lastHungOut);
+  const lastLabel =
+    days === Infinity ? "Never contacted" : days === 0 ? "Today" : `${days}d ago`;
 
   return (
-    <button
+    <li
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto 1fr",
+        gap: 10,
+        alignItems: "center",
+        padding: "7px 8px 7px 10px",
+        borderRadius: 3,
+        cursor: "pointer",
+        position: "relative",
+        background: isSelected ? "#F3EDE3" : "transparent",
+        listStyle: "none",
+      }}
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 flex items-center gap-3 border-l-2 transition-colors ${
-        isSelected
-          ? "bg-cream border-bark"
-          : "border-transparent hover:bg-cream/70"
-      }`}
     >
-      <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${dotClass}`} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-earth">{friend.name}</p>
-        <p className="text-xs text-clay">{lastLabel}</p>
-      </div>
-      <span className="shrink-0 text-xs text-clay capitalize">{catShort}</span>
-    </button>
+      {isSelected && (
+        <span
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 5,
+            bottom: 5,
+            width: 2,
+            background: "#A68B50",
+            borderRadius: 2,
+          }}
+        />
+      )}
+      <span
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 999,
+          background: color,
+          color: "#FFFBF1",
+          fontFamily: "var(--font-lora)",
+          fontSize: 11,
+          display: "grid",
+          placeItems: "center",
+          flexShrink: 0,
+          boxShadow:
+            "0 1px 0 rgba(50,30,10,0.12), inset 0 -2px 0 rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.25)",
+        }}
+      >
+        {friend.name[0]}
+      </span>
+      <span
+        style={{ display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}
+      >
+        <span
+          style={{
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: "#2E2A24",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {friend.name}
+        </span>
+        <span
+          style={{
+            fontSize: 10.5,
+            color: "#9A8F82",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 999,
+              background: statusColor,
+              display: "inline-block",
+              flexShrink: 0,
+            }}
+          />
+          {friend.category} · {lastLabel}
+        </span>
+      </span>
+    </li>
   );
 }
+
+// ─── WelcomePanel ─────────────────────────────────────────────────────────────
 
 function WelcomePanel({
   friends,
@@ -103,17 +185,60 @@ function WelcomePanel({
 }) {
   if (friends.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center px-12 py-16">
-        <div className="w-20 h-20 rounded-full bg-parchment flex items-center justify-center mb-6">
-          <span className="font-serif text-4xl text-bark">k</span>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          textAlign: "center",
+          padding: "48px",
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 999,
+            background: "#F3EDE3",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 20,
+          }}
+        >
+          <span
+            style={{ fontFamily: "var(--font-lora)", fontSize: 28, color: "#A68B50" }}
+          >
+            k
+          </span>
         </div>
-        <h2 className="font-serif text-3xl text-earth mb-3">Welcome to friendkeeper</h2>
-        <p className="text-clay mb-8 max-w-sm leading-relaxed">
+        <h2
+          style={{
+            fontFamily: "var(--font-lora)",
+            fontSize: 28,
+            color: "#2E2A24",
+            margin: "0 0 10px",
+          }}
+        >
+          Welcome to friendkeeper
+        </h2>
+        <p style={{ color: "#6B6259", marginBottom: 24, maxWidth: 320, lineHeight: 1.6 }}>
           Start tracking your friendships by adding someone you care about.
         </p>
         <button
           onClick={onAddFirst}
-          className="rounded-xl bg-bark text-cream px-7 py-3 text-sm font-medium hover:bg-earth transition-colors"
+          style={{
+            border: "1px solid rgba(166,139,80,0.35)",
+            background: "transparent",
+            color: "#A68B50",
+            padding: "7px 18px",
+            cursor: "pointer",
+            fontSize: 13,
+            fontWeight: 500,
+            borderRadius: 999,
+          }}
         >
           Add your first friend
         </button>
@@ -122,58 +247,202 @@ function WelcomePanel({
   }
 
   return (
-    <div className="px-10 py-10 max-w-2xl">
-      <div className="mb-8">
-        <h2 className="font-serif text-4xl text-earth">Good to see you.</h2>
-        <p className="text-clay mt-2">Here's how your circle is doing.</p>
-      </div>
+    <div style={{ padding: "36px 40px", maxWidth: 580 }}>
+      <h2
+        style={{
+          fontFamily: "var(--font-lora)",
+          fontSize: 36,
+          color: "#2E2A24",
+          letterSpacing: "-0.02em",
+          margin: "0 0 6px",
+          fontWeight: 400,
+        }}
+      >
+        Good to see you.
+      </h2>
+      <p style={{ color: "#6B6259", marginBottom: 28, marginTop: 0 }}>
+        Here&apos;s how your circle is doing.
+      </p>
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="rounded-2xl bg-white border border-sand p-5">
-          <p className="text-xs text-clay uppercase tracking-wider">Friends</p>
-          <p className="text-3xl font-bold text-earth mt-2">{totalFriends}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
+        <div
+          style={{
+            borderRadius: 4,
+            border: "1px solid #E0D9CE",
+            background: "#F3EDE3",
+            padding: "14px 16px",
+          }}
+        >
+          <p
+            style={{
+              fontFamily: "monospace",
+              fontSize: 9.5,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#9A8F82",
+              margin: "0 0 6px",
+            }}
+          >
+            Friends
+          </p>
+          <p
+            style={{
+              fontFamily: "var(--font-lora)",
+              fontSize: 28,
+              fontWeight: 500,
+              color: "#2E2A24",
+              margin: 0,
+              lineHeight: 1,
+            }}
+          >
+            {totalFriends}
+          </p>
         </div>
         <div
-          className="rounded-2xl border border-sand p-5"
-          style={{ backgroundColor: "#FBF0E0" }}
+          style={{
+            borderRadius: 4,
+            border: "1px solid rgba(212,168,85,0.3)",
+            background: "#FCF4E4",
+            padding: "14px 16px",
+          }}
         >
-          <p className="text-xs text-clay uppercase tracking-wider">Needs attention</p>
-          <p className="text-3xl font-bold text-goldenrod mt-2">{needAttention}</p>
+          <p
+            style={{
+              fontFamily: "monospace",
+              fontSize: 9.5,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#9A8F82",
+              margin: "0 0 6px",
+            }}
+          >
+            Attention
+          </p>
+          <p
+            style={{
+              fontFamily: "var(--font-lora)",
+              fontSize: 28,
+              fontWeight: 500,
+              color: "#D4A855",
+              margin: 0,
+              lineHeight: 1,
+            }}
+          >
+            {needAttention}
+          </p>
         </div>
         <div
-          className="rounded-2xl border border-sand p-5"
-          style={{ backgroundColor: "#FAECE9" }}
+          style={{
+            borderRadius: 4,
+            border: "1px solid rgba(196,96,96,0.3)",
+            background: "#FBF0F0",
+            padding: "14px 16px",
+          }}
         >
-          <p className="text-xs text-clay uppercase tracking-wider">Overdue</p>
-          <p className="text-3xl font-bold text-rust mt-2">{overdue}</p>
+          <p
+            style={{
+              fontFamily: "monospace",
+              fontSize: 9.5,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#9A8F82",
+              margin: "0 0 6px",
+            }}
+          >
+            Overdue
+          </p>
+          <p
+            style={{
+              fontFamily: "var(--font-lora)",
+              fontSize: 28,
+              fontWeight: 500,
+              color: "#C46060",
+              margin: 0,
+              lineHeight: 1,
+            }}
+          >
+            {overdue}
+          </p>
         </div>
       </div>
 
       {nextBestCheckIn && (
-        <div className="rounded-2xl bg-white border border-sand p-6">
-          <h3 className="font-serif text-lg text-earth mb-4">Who to reach out to</h3>
+        <div
+          style={{
+            borderRadius: 4,
+            border: "1px solid #E0D9CE",
+            background: "#F3EDE3",
+            padding: "16px 18px",
+          }}
+        >
+          <p
+            style={{
+              fontFamily: "monospace",
+              fontSize: 9.5,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#9A8F82",
+              margin: "0 0 12px",
+            }}
+          >
+            Who to reach out to
+          </p>
           <button
             onClick={() => onSelectFriend(nextBestCheckIn.id)}
-            className="flex items-center gap-4 w-full text-left group"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              width: "100%",
+              background: "transparent",
+              border: 0,
+              cursor: "pointer",
+              padding: 0,
+              textAlign: "left",
+            }}
           >
-            <div className="w-12 h-12 rounded-full bg-bark flex items-center justify-center shrink-0">
-              <span className="font-serif text-xl text-cream">{nextBestCheckIn.name[0]}</span>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 999,
+                background: friendColor(nextBestCheckIn),
+                color: "#FFFBF1",
+                fontFamily: "var(--font-lora)",
+                fontSize: 15,
+                display: "grid",
+                placeItems: "center",
+                flexShrink: 0,
+              }}
+            >
+              {nextBestCheckIn.name[0]}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-earth group-hover:underline">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 500, color: "#2E2A24", margin: "0 0 2px" }}>
                 {nextBestCheckIn.name}
               </p>
-              <p className="text-sm text-clay mt-0.5 truncate">
+              <p
+                style={{
+                  fontSize: 11.5,
+                  color: "#9A8F82",
+                  margin: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {getRecommendationReason(nextBestCheckIn)}
               </p>
             </div>
-            <span className="text-clay text-sm shrink-0">View →</span>
+            <span style={{ fontSize: 12, color: "#A68B50", flexShrink: 0 }}>View →</span>
           </button>
         </div>
       )}
     </div>
   );
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -186,6 +455,8 @@ export default function Home() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sampleLoaded, setSampleLoaded] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -198,12 +469,14 @@ export default function Home() {
     setIsGuest(!isSignedIn && guestMode);
     setUserId(uid);
     setFriends(getFriends(uid));
+    setSampleLoaded(hasSampleData(uid));
     setIsLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn]);
 
   function reload(uid: string) {
     setFriends(getFriends(uid));
+    setSampleLoaded(hasSampleData(uid));
   }
 
   function handleAddFriend(friend: Friend) {
@@ -232,6 +505,29 @@ export default function Home() {
     router.push("/sign-in");
   }
 
+  function handleToggleSample() {
+    if (!userId) return;
+    if (sampleLoaded) {
+      const updated = clearSampleData(userId, friends);
+      setFriends(updated);
+      setSampleLoaded(false);
+      if (selectedFriendId && !updated.find((f) => f.id === selectedFriendId)) {
+        setSelectedFriendId(null);
+      }
+      showToast("Sample data cleared");
+    } else {
+      const updated = loadSampleData(userId, friends);
+      setFriends(updated);
+      setSampleLoaded(true);
+      showToast("Sample data loaded");
+    }
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2800);
+  }
+
   const filteredFriends = friends.filter((f) => {
     const matchesCategory = categoryFilter === "all" || f.category === categoryFilter;
     const matchesSearch = f.name.toLowerCase().includes(search.toLowerCase());
@@ -251,27 +547,52 @@ export default function Home() {
   const selectedFriend = friends.find((f) => f.id === selectedFriendId) ?? null;
 
   if (isLoading) {
-    return <div className="flex h-full items-center justify-center bg-cream" />;
+    return <div style={{ height: "100%", background: "#FAF7F2" }} />;
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full"
+      style={{ background: "#FAF7F2", position: "relative", zIndex: 1 }}
+    >
       {/* Guest banner */}
       {isGuest && (
-        <div className="shrink-0 bg-parchment border-b border-sand px-6 py-2.5 flex items-center justify-between gap-4">
-          <p className="text-xs text-clay">
+        <div
+          style={{
+            flexShrink: 0,
+            background: "transparent",
+            borderBottom: "1px solid #E0D9CE",
+            padding: "6px 20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
+          <p style={{ fontSize: 11.5, color: "#9A8F82", margin: 0 }}>
             You&apos;re using guest mode. Sign in to keep your data tied to your account.
           </p>
-          <div className="flex items-center gap-4 shrink-0">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <a
               href="/sign-in"
-              className="text-xs text-bark underline underline-offset-2 hover:text-earth transition-colors"
+              style={{
+                fontSize: 11.5,
+                color: "#A68B50",
+                textDecoration: "underline",
+                textUnderlineOffset: 2,
+              }}
             >
               Sign in
             </a>
             <button
               onClick={exitGuestMode}
-              className="text-xs text-clay hover:text-earth transition-colors"
+              style={{
+                background: "transparent",
+                border: 0,
+                fontSize: 11.5,
+                color: "#9A8F82",
+                cursor: "pointer",
+              }}
             >
               Exit guest
             </button>
@@ -279,56 +600,134 @@ export default function Home() {
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 bg-cream">
+      {/* Top nav */}
+      <AppNav />
+
+      {/* Content */}
+      <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
-        <aside className="w-72 shrink-0 flex flex-col border-r border-sand bg-parchment">
-          {/* Logo */}
-          <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-2">
-            <div>
-              <h1 className="font-serif text-2xl text-earth tracking-wide">friendkeeper</h1>
-              <p className="text-xs text-clay mt-0.5">your people</p>
-            </div>
-            {isSignedIn ? (
-              <UserButton />
-            ) : (
-              <button
-                onClick={exitGuestMode}
-                className="text-xs text-clay hover:text-earth transition-colors mt-1"
-              >
-                Sign in
-              </button>
-            )}
-          </div>
-
-          <AppNav />
-
-          {/* Search + Filter */}
-          <div className="px-4 pb-4 pt-3 space-y-2 border-b border-sand">
-            <input
-              type="text"
-              placeholder="Search friends…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-earth placeholder:text-clay outline-none focus:ring-2 focus:ring-bark/30"
-            />
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value as FriendCategory | "all")}
-              className="w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-earth outline-none"
+        <aside
+          style={{
+            width: 270,
+            borderRight: "1px solid #E0D9CE",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            background: "color-mix(in oklab, #FAF7F2 70%, #F3EDE3 30%)",
+          }}
+        >
+          {/* Search + filter */}
+          <div
+            style={{
+              padding: "16px 16px 10px",
+              borderBottom: "1px solid #E8E1D6",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            {/* Search */}
+            <div
+              style={{
+                position: "relative",
+                borderBottom: "1px solid #E0D9CE",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "4px 0",
+                color: "#9A8F82",
+              }}
             >
-              <option value="all">All categories</option>
-              <option value="close friend">Close friend</option>
-              <option value="family">Family</option>
-              <option value="classmate">Classmate</option>
-              <option value="coworker">Coworker</option>
-              <option value="other">Other</option>
-            </select>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                style={{ flexShrink: 0 }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search by name"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  flex: 1,
+                  border: 0,
+                  outline: 0,
+                  background: "transparent",
+                  fontSize: 13,
+                  color: "#2E2A24",
+                }}
+              />
+            </div>
+
+            {/* Category filter */}
+            <div
+              style={{ display: "flex", alignItems: "baseline", gap: 8 }}
+            >
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 9.5,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#9A8F82",
+                  flexShrink: 0,
+                }}
+              >
+                Show
+              </span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value as FriendCategory | "all")}
+                style={{
+                  flex: 1,
+                  border: 0,
+                  borderBottom: "1px solid #E0D9CE",
+                  background: "transparent",
+                  fontSize: 12.5,
+                  color: "#2E2A24",
+                  padding: "3px 0 4px",
+                  outline: "none",
+                  fontFamily: "var(--font-lora)",
+                }}
+              >
+                <option value="all">All categories</option>
+                <option value="close friend">Close friend</option>
+                <option value="family">Family</option>
+                <option value="classmate">Classmate</option>
+                <option value="coworker">Coworker</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
           </div>
 
           {/* Friends list */}
-          <div className="flex-1 overflow-y-auto py-2">
+          <ul
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "6px 8px",
+              margin: 0,
+              listStyle: "none",
+            }}
+          >
             {!isLoading && sortedFriends.length === 0 && friends.length > 0 && (
-              <p className="px-5 py-4 text-sm text-clay">No matches.</p>
+              <li
+                style={{
+                  padding: "12px 10px",
+                  fontSize: 12,
+                  color: "#9A8F82",
+                  fontStyle: "italic",
+                }}
+              >
+                No matches.
+              </li>
             )}
             {sortedFriends.map((friend) => (
               <FriendSidebarItem
@@ -338,21 +737,59 @@ export default function Home() {
                 onClick={() => setSelectedFriendId(friend.id)}
               />
             ))}
-          </div>
+          </ul>
 
-          {/* Add button */}
-          <div className="p-4 border-t border-sand">
+          {/* Pinned add + sample */}
+          <div
+            style={{
+              padding: "10px 14px 14px",
+              borderTop: "1px solid #E8E1D6",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             <button
               onClick={() => setShowAddForm(true)}
-              className="w-full rounded-xl bg-bark text-cream py-2.5 text-sm font-medium hover:bg-earth transition-colors"
+              style={{
+                border: "1px solid rgba(166,139,80,0.3)",
+                background: "transparent",
+                color: "#A68B50",
+                padding: "5px 14px",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 500,
+                borderRadius: 999,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
             >
-              + Add friend
+              <span>+</span> Add a friend
+            </button>
+            <button
+              onClick={handleToggleSample}
+              style={{
+                background: "transparent",
+                border: 0,
+                cursor: "pointer",
+                fontSize: 10.5,
+                color: "#B0A89E",
+                fontFamily: "monospace",
+                letterSpacing: "0.05em",
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+                textDecorationColor: "rgba(176,168,158,0.35)",
+              }}
+            >
+              {sampleLoaded ? "Clear sample data" : "Try sample data"}
             </button>
           </div>
         </aside>
 
-        {/* Detail panel */}
-        <main className="flex-1 overflow-y-auto">
+        {/* Detail */}
+        <main style={{ flex: 1, overflowY: "auto" }}>
           {selectedFriend ? (
             <FriendCard
               key={selectedFriendId!}
@@ -374,17 +811,110 @@ export default function Home() {
         </main>
       </div>
 
+      {/* Toast */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#2E2A24",
+            color: "#FAF7F2",
+            borderRadius: 4,
+            fontSize: 12,
+            padding: "7px 14px",
+            zIndex: 200,
+            pointerEvents: "none",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
       {/* Add friend modal */}
       {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-            <button
-              onClick={() => setShowAddForm(false)}
-              className="absolute right-4 top-4 text-xl text-clay hover:text-earth leading-none"
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(46,42,36,0.4)",
+            backdropFilter: "blur(2px)",
+            zIndex: 100,
+            display: "grid",
+            placeItems: "center",
+            animation: "scrim-in 0.15s ease-out",
+          }}
+          onClick={() => setShowAddForm(false)}
+        >
+          <div
+            style={{
+              width: "min(480px, calc(100vw - 32px))",
+              maxHeight: "calc(100vh - 48px)",
+              background: "#F3EDE3",
+              border: "1px solid #E0D9CE",
+              borderRadius: 6,
+              boxShadow:
+                "0 18px 48px -16px rgba(50,30,10,0.35), 0 2px 6px rgba(50,30,10,0.08)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              animation: "modal-in 0.18s cubic-bezier(.34,1.4,.6,1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header
+              style={{
+                padding: "14px 16px 10px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderBottom: "1px solid #E8E1D6",
+              }}
             >
-              ×
-            </button>
-            <FriendForm onAddFriend={handleAddFriend} />
+              <h2
+                style={{
+                  margin: 0,
+                  fontFamily: "var(--font-lora)",
+                  fontSize: 19,
+                  fontWeight: 500,
+                  color: "#2E2A24",
+                }}
+              >
+                Add someone
+              </h2>
+              <button
+                onClick={() => setShowAddForm(false)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid transparent",
+                  width: 24,
+                  height: 24,
+                  borderRadius: 999,
+                  cursor: "pointer",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "#6B6259",
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </header>
+            <div style={{ padding: "14px 16px 4px", overflowY: "auto" }}>
+              <FriendForm
+                onAddFriend={handleAddFriend}
+                onCancel={() => setShowAddForm(false)}
+              />
+            </div>
           </div>
         </div>
       )}

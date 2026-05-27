@@ -5,166 +5,407 @@ import { Friend, FriendCategory } from "@/types/friend";
 
 type FriendFormProps = {
   onAddFriend: (friend: Friend) => void;
+  initial?: Friend;
+  onUpdate?: (friend: Friend) => void;
+  onDelete?: () => void;
+  onCancel?: () => void;
 };
 
-const INPUT_CLASS =
-  "w-full rounded-xl border border-sand bg-white px-4 py-2.5 text-sm text-earth placeholder:text-clay outline-none focus:ring-2 focus:ring-bark/30 transition";
+const inputStyle: React.CSSProperties = {
+  border: 0,
+  borderBottom: "1px solid #E0D9CE",
+  background: "transparent",
+  font: "inherit",
+  fontSize: 13,
+  color: "#2E2A24",
+  padding: "5px 0 6px",
+  outline: "none",
+  width: "100%",
+};
 
-export default function FriendForm({ onAddFriend }: FriendFormProps) {
-  const [name, setName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [category, setCategory] = useState<FriendCategory>("close friend");
-  const [lastTexted, setLastTexted] = useState("");
-  const [lastHungOut, setLastHungOut] = useState("");
-  const [textAmount, setTextAmount] = useState(14);
-  const [textUnit, setTextUnit] = useState<"days" | "months">("days");
-  const [hangoutAmount, setHangoutAmount] = useState(1);
-  const [hangoutUnit, setHangoutUnit] = useState<"days" | "months">("months");
+const labelStyle: React.CSSProperties = {
+  fontFamily: "var(--font-sans)",
+  fontSize: 9.5,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase" as const,
+  color: "#9A8F82",
+  display: "block",
+  marginBottom: 4,
+};
+
+function FieldLabel({ children }: { children: string }) {
+  return <span style={labelStyle}>{children}</span>;
+}
+
+function Field({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function InputWithFocus({
+  style,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement>) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <input
+      {...props}
+      style={{
+        ...inputStyle,
+        borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
+        ...style,
+      }}
+      onFocus={(e) => {
+        setFocused(true);
+        props.onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setFocused(false);
+        props.onBlur?.(e);
+      }}
+    />
+  );
+}
+
+function TextareaWithFocus({
+  style,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <textarea
+      {...props}
+      style={{
+        ...inputStyle,
+        resize: "none" as const,
+        borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
+        ...style,
+      }}
+      onFocus={(e) => {
+        setFocused(true);
+        props.onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setFocused(false);
+        props.onBlur?.(e);
+      }}
+    />
+  );
+}
+
+function SelectWithFocus({
+  style,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <select
+      {...props}
+      style={{
+        ...inputStyle,
+        fontFamily: "var(--font-lora)",
+        appearance: "none" as const,
+        WebkitAppearance: "none" as const,
+        borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
+        ...style,
+      }}
+      onFocus={(e) => {
+        setFocused(true);
+        props.onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setFocused(false);
+        props.onBlur?.(e);
+      }}
+    />
+  );
+}
+
+function isoToDateInput(value?: string) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+export default function FriendForm({
+  onAddFriend,
+  initial,
+  onUpdate,
+  onDelete,
+  onCancel,
+}: FriendFormProps) {
+  const isEdit = !!initial;
+
+  const [name, setName] = useState(initial?.name ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [category, setCategory] = useState<FriendCategory>(initial?.category ?? "close friend");
+  const [livesIn, setLivesIn] = useState(initial?.livesIn ?? "");
+  const [birthday, setBirthday] = useState(initial?.birthday ?? "");
+  const [metAt, setMetAt] = useState(initial?.metAt ?? "");
+  const [lastTexted, setLastTexted] = useState(isoToDateInput(initial?.lastTexted));
+  const [lastHungOut, setLastHungOut] = useState(isoToDateInput(initial?.lastHungOut));
+
+  // Frequency
+  function daysToAmountAndUnit(days: number) {
+    if (days % 30 === 0) return { amount: days / 30, unit: "months" as const };
+    return { amount: days, unit: "days" as const };
+  }
+
+  const initText = daysToAmountAndUnit(initial?.textFrequencyDays ?? 14);
+  const initHangout = daysToAmountAndUnit(initial?.hangoutFrequencyDays ?? 30);
+
+  const [textAmount, setTextAmount] = useState(initText.amount);
+  const [textUnit, setTextUnit] = useState<"days" | "months">(initText.unit);
+  const [hangoutAmount, setHangoutAmount] = useState(initHangout.amount);
+  const [hangoutUnit, setHangoutUnit] = useState<"days" | "months">(initHangout.unit);
+
+  function buildFriend(): Friend {
+    return {
+      id: initial?.id ?? crypto.randomUUID(),
+      name,
+      notes: notes.trim() || undefined,
+      category,
+      livesIn: livesIn.trim() || undefined,
+      birthday: birthday.trim() || undefined,
+      metAt: metAt.trim() || undefined,
+      color: initial?.color,
+      nextTopics: initial?.nextTopics,
+      bio: initial?.bio,
+      lastTexted: lastTexted ? new Date(lastTexted).toISOString() : initial?.lastTexted,
+      lastHungOut: lastHungOut ? new Date(lastHungOut).toISOString() : initial?.lastHungOut,
+      textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
+      hangoutFrequencyDays: hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
+      createdAt: initial?.createdAt ?? new Date().toISOString(),
+      interactions: initial?.interactions ?? [],
+    };
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
-    const newFriend: Friend = {
-      id: crypto.randomUUID(),
-      name,
-      notes,
-      category,
-      lastTexted: lastTexted ? new Date(lastTexted).toISOString() : undefined,
-      lastHungOut: lastHungOut ? new Date(lastHungOut).toISOString() : undefined,
-      textFrequencyDays: textUnit === "months" ? textAmount * 30 : textAmount,
-      hangoutFrequencyDays: hangoutUnit === "months" ? hangoutAmount * 30 : hangoutAmount,
-      createdAt: new Date().toISOString(),
-      interactions: [],
-    };
-
-    onAddFriend(newFriend);
-
-    setName("");
-    setNotes("");
-    setCategory("close friend");
-    setLastTexted("");
-    setLastHungOut("");
-    setTextAmount(14);
-    setTextUnit("days");
-    setHangoutAmount(1);
-    setHangoutUnit("months");
+    const friend = buildFriend();
+    if (isEdit && onUpdate) {
+      onUpdate(friend);
+    } else {
+      onAddFriend(friend);
+    }
   }
 
+  const dividerLabelStyle: React.CSSProperties = {
+    fontFamily: "monospace",
+    fontSize: 9.5,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    color: "#9A8F82",
+    marginTop: 8,
+    marginBottom: 4,
+  };
+
+  const btnPrimStyle: React.CSSProperties = {
+    background: "transparent",
+    color: "#A68B50",
+    border: "1px solid rgba(166,139,80,0.35)",
+    padding: "5px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: "pointer",
+  };
+
+  const btnGhostStyle: React.CSSProperties = {
+    background: "#F3EDE3",
+    border: "1px solid #E0D9CE",
+    borderRadius: 999,
+    padding: "5px 12px",
+    fontSize: 12,
+    cursor: "pointer",
+    color: "#6B6259",
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="mb-2">
-        <h2 className="font-serif text-2xl text-earth">Add someone</h2>
-        <p className="text-sm text-clay mt-1">Someone you want to keep close.</p>
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Row 1: Name + Category */}
+      <div style={{ display: "flex", gap: 12 }}>
+        <Field style={{ flex: 1 }}>
+          <FieldLabel>Name</FieldLabel>
+          <InputWithFocus
+            placeholder="Their name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+        </Field>
+        <Field style={{ width: 140 }}>
+          <FieldLabel>Category</FieldLabel>
+          <SelectWithFocus
+            value={category}
+            onChange={(e) => setCategory(e.target.value as FriendCategory)}
+          >
+            <option value="close friend">Close friend</option>
+            <option value="family">Family</option>
+            <option value="classmate">Classmate</option>
+            <option value="coworker">Coworker</option>
+            <option value="other">Other</option>
+          </SelectWithFocus>
+        </Field>
       </div>
 
-      <label className="block space-y-1.5">
-        <span className="text-sm font-medium text-clay">Name</span>
-        <input
-          className={INPUT_CLASS}
-          placeholder="Their name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-      </label>
-
-      <label className="block space-y-1.5">
-        <span className="text-sm font-medium text-clay">Notes</span>
-        <textarea
-          className={INPUT_CLASS + " resize-none"}
-          rows={3}
+      {/* Row 2: Notes */}
+      <Field>
+        <FieldLabel>A note about them</FieldLabel>
+        <TextareaWithFocus
+          rows={2}
           placeholder="Anything important to remember?"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
-      </label>
+      </Field>
 
-      <label className="block space-y-1.5">
-        <span className="text-sm font-medium text-clay">Category</span>
-        <select
-          className={INPUT_CLASS}
-          value={category}
-          onChange={(e) => setCategory(e.target.value as FriendCategory)}
-        >
-          <option value="close friend">Close friend</option>
-          <option value="family">Family</option>
-          <option value="classmate">Classmate</option>
-          <option value="coworker">Coworker</option>
-          <option value="other">Other</option>
-        </select>
-      </label>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1.5">
-          <span className="text-sm font-medium text-clay">Last texted</span>
-          <input
-            type="date"
-            className={INPUT_CLASS}
-            value={lastTexted}
-            onChange={(e) => setLastTexted(e.target.value)}
+      {/* Row 3: Lives in + Birthday */}
+      <div style={{ display: "flex", gap: 12 }}>
+        <Field style={{ flex: 1 }}>
+          <FieldLabel>Lives in</FieldLabel>
+          <InputWithFocus
+            placeholder="City, Country"
+            value={livesIn}
+            onChange={(e) => setLivesIn(e.target.value)}
           />
-        </label>
-        <label className="space-y-1.5">
-          <span className="text-sm font-medium text-clay">Last hung out</span>
-          <input
-            type="date"
-            className={INPUT_CLASS}
-            value={lastHungOut}
-            onChange={(e) => setLastHungOut(e.target.value)}
+        </Field>
+        <Field style={{ width: 120 }}>
+          <FieldLabel>Birthday</FieldLabel>
+          <InputWithFocus
+            placeholder="Jun 12"
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)}
           />
-        </label>
+        </Field>
       </div>
 
-      <div className="space-y-3">
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-clay">Text every</span>
-          <div className="grid grid-cols-[1fr_130px] gap-2">
-            <input
+      {/* Row 4: How you met */}
+      <Field>
+        <FieldLabel>How you met</FieldLabel>
+        <InputWithFocus
+          placeholder="College, 2019"
+          value={metAt}
+          onChange={(e) => setMetAt(e.target.value)}
+        />
+      </Field>
+
+      {/* Divider */}
+      <div style={dividerLabelStyle}>Stay in touch</div>
+
+      {/* Row 5: Frequency */}
+      <div style={{ display: "flex", gap: 16 }}>
+        <Field style={{ flex: 1 }}>
+          <FieldLabel>Text every</FieldLabel>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <InputWithFocus
               type="number"
-              className={INPUT_CLASS}
-              value={textAmount}
               min={1}
+              value={textAmount}
               onChange={(e) => setTextAmount(Number(e.target.value))}
+              style={{ width: 60 }}
             />
-            <select
-              className={INPUT_CLASS}
+            <SelectWithFocus
               value={textUnit}
               onChange={(e) => setTextUnit(e.target.value as "days" | "months")}
+              style={{ flex: 1 }}
             >
               <option value="days">days</option>
               <option value="months">months</option>
-            </select>
+            </SelectWithFocus>
           </div>
-        </label>
-
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-clay">Hang out every</span>
-          <div className="grid grid-cols-[1fr_130px] gap-2">
-            <input
+        </Field>
+        <Field style={{ flex: 1 }}>
+          <FieldLabel>Hang out every</FieldLabel>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <InputWithFocus
               type="number"
-              className={INPUT_CLASS}
-              value={hangoutAmount}
               min={1}
+              value={hangoutAmount}
               onChange={(e) => setHangoutAmount(Number(e.target.value))}
+              style={{ width: 60 }}
             />
-            <select
-              className={INPUT_CLASS}
+            <SelectWithFocus
               value={hangoutUnit}
               onChange={(e) => setHangoutUnit(e.target.value as "days" | "months")}
+              style={{ flex: 1 }}
             >
               <option value="days">days</option>
               <option value="months">months</option>
-            </select>
+            </SelectWithFocus>
           </div>
-        </label>
+        </Field>
       </div>
 
-      <button
-        type="submit"
-        className="w-full rounded-xl bg-bark text-cream py-3 text-sm font-medium hover:bg-earth transition-colors"
+      {/* Row 6: Dates (edit only) */}
+      {isEdit && (
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field style={{ flex: 1 }}>
+            <FieldLabel>Last texted</FieldLabel>
+            <InputWithFocus
+              type="date"
+              value={lastTexted}
+              onChange={(e) => setLastTexted(e.target.value)}
+            />
+          </Field>
+          <Field style={{ flex: 1 }}>
+            <FieldLabel>Last hung out</FieldLabel>
+            <InputWithFocus
+              type="date"
+              value={lastHungOut}
+              onChange={(e) => setLastHungOut(e.target.value)}
+            />
+          </Field>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: 8,
+          paddingTop: 8,
+          borderTop: "1px solid #E0D9CE",
+        }}
       >
-        Add to my circle
-      </button>
+        {/* Danger */}
+        <div>
+          {isEdit && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              style={{
+                background: "transparent",
+                border: 0,
+                color: "#C46060",
+                fontSize: 12,
+                cursor: "pointer",
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+                padding: 0,
+              }}
+            >
+              Remove friend
+            </button>
+          )}
+        </div>
+
+        {/* Cancel + Submit */}
+        <div style={{ display: "flex", gap: 8 }}>
+          {onCancel && (
+            <button type="button" onClick={onCancel} style={btnGhostStyle}>
+              Cancel
+            </button>
+          )}
+          <button type="submit" style={btnPrimStyle}>
+            {isEdit ? "Save changes" : "Add to my circle"}
+          </button>
+        </div>
+      </div>
     </form>
   );
 }

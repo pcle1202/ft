@@ -16,6 +16,12 @@ export type Friend = {
   hangoutFrequencyDays: number;
   createdAt: string;
   interactions: Interaction[];
+  bio?: string;
+  livesIn?: string;
+  birthday?: string;
+  metAt?: string;
+  color?: string;
+  nextTopics?: string[];
 };
 
 export type InteractionType = "text" | "hangout";
@@ -26,5 +32,6 @@ export type Interaction = {
   date: string;
   notes?: string;
   location?: string;
+  mood?: string;
+  topics?: string[];
 };
-
