@@ -1,0 +1,30 @@
+import { NextRequest, NextResponse } from "next/server";
+import { generateAIResponse } from "@/lib/groq";
+
+export async function POST(request: NextRequest) {
+  try {
+    const { name, notes, interactions } = await request.json() as {
+      name: string;
+      notes?: string;
+      interactions: Array<{ type: string; date: string; notes?: string }>;
+    };
+
+    if (!name) return NextResponse.json({ starter: null });
+
+    const historyLines = (interactions ?? [])
+      .slice(0, 6)
+      .map((i) => {
+        const d = new Date(i.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        return `- ${i.type} on ${d}${i.notes ? `: ${i.notes}` : ""}`;
+      })
+      .join("\n");
+
+    const aboutLine = notes ? `About ${name}: ${notes}\n\n` : "";
+    const prompt = `${aboutLine}Recent history with ${name}:\n${historyLines}\n\nBased on this friendship history, write one warm and specific conversation starter the user could send right now. Reference something real from their history. Keep it to 1-2 sentences, casual and friendly. Do not include quotation marks around the entire message.`;
+
+    const starter = await generateAIResponse(prompt);
+    return NextResponse.json({ starter: starter.trim() });
+  } catch {
+    return NextResponse.json({ starter: null });
+  }
+}

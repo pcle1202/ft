@@ -225,6 +225,18 @@ export default function FriendForm({
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Top actions */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingBottom: 4 }}>
+        {onCancel && (
+          <button type="button" onClick={onCancel} style={btnGhostStyle}>
+            Cancel
+          </button>
+        )}
+        <button type="submit" style={btnPrimStyle}>
+          {isEdit ? "Save changes" : "Add to my circle"}
+        </button>
+      </div>
+
       {/* Row 1: Name + Category */}
       <div style={{ display: "flex", gap: 12 }}>
         <Field style={{ flex: 1 }}>
@@ -361,51 +373,27 @@ export default function FriendForm({
         </div>
       )}
 
-      {/* Actions */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: 8,
-          paddingTop: 8,
-          borderTop: "1px solid #E0D9CE",
-        }}
-      >
-        {/* Danger */}
-        <div>
-          {isEdit && onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              style={{
-                background: "transparent",
-                border: 0,
-                color: "#C46060",
-                fontSize: 12,
-                cursor: "pointer",
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-                padding: 0,
-              }}
-            >
-              Remove friend
-            </button>
-          )}
-        </div>
-
-        {/* Cancel + Submit */}
-        <div style={{ display: "flex", gap: 8 }}>
-          {onCancel && (
-            <button type="button" onClick={onCancel} style={btnGhostStyle}>
-              Cancel
-            </button>
-          )}
-          <button type="submit" style={btnPrimStyle}>
-            {isEdit ? "Save changes" : "Add to my circle"}
+      {/* Remove friend */}
+      {isEdit && onDelete && (
+        <div style={{ paddingTop: 4 }}>
+          <button
+            type="button"
+            onClick={onDelete}
+            style={{
+              background: "transparent",
+              border: 0,
+              color: "#C46060",
+              fontSize: 12,
+              cursor: "pointer",
+              textDecoration: "underline",
+              textUnderlineOffset: 3,
+              padding: 0,
+            }}
+          >
+            Remove friend
           </button>
         </div>
-      </div>
+      )}
     </form>
   );
 }

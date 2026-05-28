@@ -322,10 +322,17 @@ function createSampleFriends(): Friend[] {
 
 const STORAGE_KEY = (userId: string) => `friendkeeper-friends-${userId}`;
 const SAMPLE_FLAG = (userId: string) => `friendkeeper-sample-${userId}`;
+const SAMPLE_VERSION_KEY = (userId: string) => `friendkeeper-sample-version-${userId}`;
+const SAMPLE_VERSION = "v3";
 
 export function hasSampleData(userId: string): boolean {
   if (typeof window === "undefined") return false;
   return localStorage.getItem(SAMPLE_FLAG(userId)) === "1";
+}
+
+export function isSampleDataCurrent(userId: string): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(SAMPLE_VERSION_KEY(userId)) === SAMPLE_VERSION;
 }
 
 export function loadSampleData(userId: string, current: Friend[]): Friend[] {
@@ -334,6 +341,7 @@ export function loadSampleData(userId: string, current: Friend[]): Friend[] {
   const merged = [...withoutOld, ...samples];
   localStorage.setItem(STORAGE_KEY(userId), JSON.stringify(merged));
   localStorage.setItem(SAMPLE_FLAG(userId), "1");
+  localStorage.setItem(SAMPLE_VERSION_KEY(userId), SAMPLE_VERSION);
   return merged;
 }
 
@@ -341,5 +349,6 @@ export function clearSampleData(userId: string, current: Friend[]): Friend[] {
   const filtered = current.filter((f) => !SAMPLE_IDS.includes(f.id));
   localStorage.setItem(STORAGE_KEY(userId), JSON.stringify(filtered));
   localStorage.removeItem(SAMPLE_FLAG(userId));
+  localStorage.removeItem(SAMPLE_VERSION_KEY(userId));
   return filtered;
 }

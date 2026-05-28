@@ -519,7 +519,7 @@ export default function FriendCard({ friend, onUpdateFriend, onDeleteFriend }: F
 
   return (
     <>
-      <div style={{ maxWidth: 680, padding: "28px 36px 48px" }}>
+      <div style={{ padding: "28px 36px 48px" }}>
         {/* Header */}
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 18, alignItems: "flex-start", marginBottom: 16 }}>
           {/* Avatar */}

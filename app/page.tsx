@@ -7,7 +7,7 @@ import { Friend, FriendCategory } from "@/types/friend";
 import FriendForm from "@/components/FriendForm";
 import FriendCard from "@/components/FriendCard";
 import { getFriends, addFriend, updateFriend, deleteFriend } from "@/lib/storage";
-import { loadSampleData, clearSampleData, hasSampleData } from "@/lib/sampleData";
+import { loadSampleData, clearSampleData, hasSampleData, isSampleDataCurrent } from "@/lib/sampleData";
 import AppNav from "@/components/AppNav";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -468,11 +468,29 @@ export default function Home() {
     const uid = isSignedIn ? user!.id : "guest";
     setIsGuest(!isSignedIn && guestMode);
     setUserId(uid);
-    setFriends(getFriends(uid));
+    let currentFriends = getFriends(uid);
+    if (hasSampleData(uid) && !isSampleDataCurrent(uid)) {
+      currentFriends = loadSampleData(uid, currentFriends);
+    }
+    setFriends(currentFriends);
     setSampleLoaded(hasSampleData(uid));
+    if (currentFriends.length > 0) {
+      const saved = sessionStorage.getItem("friendkeeper-selected-friend");
+      const sorted = [...currentFriends].sort((a, b) => getUrgency(b) - getUrgency(a));
+      const initial = (saved && currentFriends.find((f) => f.id === saved))
+        ? saved
+        : sorted[0].id;
+      setSelectedFriendId(initial);
+    }
     setIsLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    if (selectedFriendId) {
+      sessionStorage.setItem("friendkeeper-selected-friend", selectedFriendId);
+    }
+  }, [selectedFriendId]);
 
   function reload(uid: string) {
     setFriends(getFriends(uid));
@@ -496,7 +514,13 @@ export default function Home() {
   function handleDeleteFriend(friendId: string) {
     if (!userId) return;
     deleteFriend(friendId, userId);
-    if (selectedFriendId === friendId) setSelectedFriendId(null);
+    if (selectedFriendId === friendId) {
+      const remaining = getFriends(userId).filter((f) => f.id !== friendId);
+      const next = remaining.length > 0
+        ? [...remaining].sort((a, b) => getUrgency(b) - getUrgency(a))[0].id
+        : null;
+      setSelectedFriendId(next);
+    }
     reload(userId);
   }
 

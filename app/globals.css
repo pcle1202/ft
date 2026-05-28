@@ -17,6 +17,10 @@
   --color-rust: #C46060;
 }
 
+html {
+  zoom: 1.25;
+}
+
 body {
   background-color: #FAF7F2;
   color: #2E2A24;
