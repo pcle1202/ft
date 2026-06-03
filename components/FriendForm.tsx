@@ -141,6 +141,7 @@ export default function FriendForm({
   const [name, setName] = useState(initial?.name ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [category, setCategory] = useState<FriendCategory>(initial?.category ?? "close friend");
+  const [photoUrl, setPhotoUrl] = useState(initial?.photoUrl ?? "");
   const [livesIn, setLivesIn] = useState(initial?.livesIn ?? "");
   const [birthday, setBirthday] = useState(initial?.birthday ?? "");
   const [metAt, setMetAt] = useState(initial?.metAt ?? "");
@@ -171,6 +172,7 @@ export default function FriendForm({
       birthday: birthday.trim() || undefined,
       metAt: metAt.trim() || undefined,
       color: initial?.color,
+      photoUrl: photoUrl || undefined,
       nextTopics: initial?.nextTopics,
       bio: initial?.bio,
       lastTexted: lastTexted ? new Date(lastTexted).toISOString() : initial?.lastTexted,
@@ -223,8 +225,50 @@ export default function FriendForm({
     color: "#6B6259",
   };
 
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhotoUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("") || "?";
+  const avatarColor = initial?.color ?? "#7A5A3F";
+
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Photo upload — avatar only, click to change */}
+      <label style={{ cursor: "pointer", display: "inline-block", alignSelf: "flex-start" }} title={photoUrl ? "Click to change photo" : "Click to add a photo"}>
+        <div style={{
+          width: 52, height: 52, borderRadius: 999,
+          background: photoUrl ? "transparent" : avatarColor,
+          overflow: "hidden", display: "grid", placeItems: "center",
+          boxShadow: "0 1px 0 rgba(50,30,10,0.12), inset 0 -2px 0 rgba(0,0,0,0.08)",
+          position: "relative",
+        }}>
+          {photoUrl ? (
+            <img src={photoUrl} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <span style={{ color: "#FFFBF1", fontFamily: "var(--serif)", fontSize: 20, fontWeight: 400 }}>{initials}</span>
+          )}
+          <div style={{
+            position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            opacity: 0, transition: "opacity 0.15s",
+          }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+            onMouseLeave={e => (e.currentTarget.style.opacity = "0")}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </div>
+        </div>
+        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
+      </label>
+
       {/* Top actions */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingBottom: 4 }}>
         {onCancel && (

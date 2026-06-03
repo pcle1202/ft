@@ -28,7 +28,15 @@ export async function POST(request: NextRequest) {
       })
       .join("\n");
 
-    const prompt = `Friend interactions in ${monthName}:\n${lines}\n\nYou are a warm, encouraging friendship coach. Based on these interactions from this month, write a personal 3-4 sentence monthly recap. Mention specific friends by name. Note highlights, who they connected with most, and one gentle suggestion. Keep it warm and human, not clinical.`;
+    const prompt = `You are summarizing someone's social activity for ${monthName}. Write 2-3 sentences in SECOND PERSON ONLY ("you", "your"). STRICT RULES — violating any of these is a failure:
+- Never start with "Dear" or any greeting
+- Never use the word "I" or "I've" or "I'm" anywhere
+- No em dashes
+- No sentimental or flowery language
+- Start directly with a factual observation
+- Use American double quotation marks (" ") not single quotes (' ')
+
+Friend interactions:\n${lines}\n\nMention specific friends by name. Note who got the most attention and who got less. Keep it plain and direct.`;
 
     const report = await generateAIResponse(prompt);
     return NextResponse.json({ report: report.trim() });

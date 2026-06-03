@@ -1,335 +1,590 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { Friend, FriendCategory, Interaction } from "@/types/friend";
+import { Friend, Interaction } from "@/types/friend";
 import { getFriends } from "@/lib/storage";
-import { formatLastInteraction } from "@/lib/date";
 import AppNav from "@/components/AppNav";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  Tooltip as RechartTooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { FriendAvatar } from "@/components/Avatar";
+import { AreaChart, Area, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getDaysAgo(date?: string) {
+function getDaysAgo(date?: string): number {
   if (!date) return Infinity;
   return Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function getUrgency(friend: Friend) {
-  return Math.max(
-    getDaysAgo(friend.lastTexted) - friend.textFrequencyDays,
-    getDaysAgo(friend.lastHungOut) - friend.hangoutFrequencyDays
-  );
+function lastTextedDays(f: Friend): number { return getDaysAgo(f.lastTexted); }
+function lastHungDays(f: Friend): number { return getDaysAgo(f.lastHungOut); }
+
+function statusFor(f: Friend): "healthy" | "attention" | "overdue" {
+  const td = lastTextedDays(f);
+  const hd = lastHungDays(f);
+  const tRatio = td === Infinity ? 2 : td / f.textFrequencyDays;
+  const hRatio = hd === Infinity ? 2 : hd / f.hangoutFrequencyDays;
+  const worst = Math.max(tRatio, hRatio);
+  if (worst >= 1.2) return "overdue";
+  if (worst >= 0.85) return "attention";
+  return "healthy";
 }
 
-function getHealthScore(friend: Friend) {
-  const urgency = getUrgency(friend);
-  if (urgency === Infinity) return 0;
-  return Math.max(Math.min(100 - Math.max(urgency, 0) * 8, 100), 0);
+function daysAgoLabel(d: number): string {
+  if (d === Infinity) return "never";
+  if (d <= 0) return "today";
+  if (d < 7) return d + "d ago";
+  if (d < 30) return Math.round(d / 7) + "w ago";
+  if (d < 365) return Math.round(d / 30) + "mo ago";
+  return Math.round(d / 365) + "y ago";
 }
 
-function getHealthLabel(score: number) {
-  if (score >= 75) return "Healthy";
-  if (score >= 45) return "Needs attention";
-  return "Overdue";
+function initialsOf(name: string): string {
+  return name.split(" ").map((p) => p[0]).slice(0, 2).join("");
 }
 
-const AVATAR_PALETTE = [
-  "#7A5A3F", "#5E6E5A", "#A06A4A", "#604838",
-  "#7C5840", "#4A5E7A", "#7A4A5E", "#5A5E7A",
-];
-
-function friendColor(f: Friend): string {
-  if (f.color) return f.color;
-  const h = f.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
+function kindWord(k: string): string {
+  if (k === "hangout") return "Hung out";
+  if (k === "text") return "Texted";
+  return "Noted";
 }
 
-const CATEGORIES: FriendCategory[] = [
-  "close friend", "family", "classmate", "coworker", "other",
-];
-
-function floorToMonday(date: Date): number {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay();
-  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-  return d.getTime();
-}
-
-function calculateStreaks(friends: Friend[]): { current: number; longest: number } {
-  const weekMs = 7 * 24 * 60 * 60 * 1000;
-  const weekSet = new Set<number>();
-  friends.forEach((f) =>
-    (f.interactions ?? []).forEach((i) => weekSet.add(floorToMonday(new Date(i.date))))
-  );
-  if (weekSet.size === 0) return { current: 0, longest: 0 };
-
-  const sorted = Array.from(weekSet).sort((a, b) => a - b);
-
-  let longest = 1, run = 1;
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] - sorted[i - 1] === weekMs) { run++; longest = Math.max(longest, run); }
-    else run = 1;
+function catColor(cat: string): string {
+  switch (cat.toLowerCase()) {
+    case "close friend": return "#A68B50";
+    case "family": return "#7B9E70";
+    case "coworker": return "#9A8B75";
+    case "classmate": return "#8A9BA8";
+    default: return "#B0A89E";
   }
-
-  const thisWeek = floorToMonday(new Date());
-  const lastWeek = thisWeek - weekMs;
-  const startWeek = weekSet.has(thisWeek) ? thisWeek : weekSet.has(lastWeek) ? lastWeek : null;
-
-  let current = 0;
-  if (startWeek !== null) {
-    let check = startWeek;
-    while (weekSet.has(check)) { current++; check -= weekMs; }
-  }
-
-  return { current, longest };
 }
 
-function rankForOutreach(friends: Friend[]): Friend[] {
-  return [...friends]
-    .map((f) => {
-      const daysSince = Math.min(getDaysAgo(f.lastTexted), getDaysAgo(f.lastHungOut));
-      const overdueBy = Math.max(0, daysSince - f.textFrequencyDays);
-      const health = getHealthScore(f);
-      const score = overdueBy * 3 + (daysSince / f.textFrequencyDays) * 10 + (100 - health);
-      return { f, score };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map(({ f }) => f);
+function formatToday(): string {
+  return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
 }
 
-function getISOWeekKey(): string {
-  const now = new Date();
-  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${weekNo.toString().padStart(2, "0")}`;
+function timeOfDay(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "morning";
+  if (h < 17) return "afternoon";
+  return "evening";
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <div style={{ fontFamily: "var(--font-lora)", fontSize: 17, fontWeight: 500, letterSpacing: "-0.005em", color: "#2E2A24", marginBottom: 12 }}>
-      {children}<span>:</span>
-    </div>
-  );
-}
+// ─── Heatmap ─────────────────────────────────────────────────────────────────
 
-function Rule() {
-  return <hr style={{ height: 1, border: "none", background: "#E0D9CE", margin: "24px 0" }} />;
-}
+type HeatCell = { date: Date; count: number; level: number; moments: Array<{ friend: Friend; interaction: Interaction }> };
+type HeatWeek = HeatCell[];
 
-function EmptyState() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 400, textAlign: "center" }}>
-      <p style={{ fontFamily: "var(--font-lora)", fontSize: 22, color: "#2E2A24", margin: "0 0 8px" }}>No data yet</p>
-      <p style={{ fontSize: 13, color: "#9A8F82" }}>Add some friends to see your circle analytics.</p>
-    </div>
-  );
-}
-
-function AiCard({ label, loading, loadingText, children }: {
-  label: string;
-  loading: boolean;
-  loadingText: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ borderRadius: 6, padding: "14px 16px", background: "#F0EBE0", border: "1px solid #D9C9A8" }}>
-      <p style={{ fontFamily: "monospace", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#A68B50", margin: "0 0 8px" }}>
-        {label}
-      </p>
-      {loading ? (
-        <p style={{ fontSize: 12, color: "#B0A070", margin: 0, fontStyle: "italic" }}>{loadingText}</p>
-      ) : children}
-    </div>
-  );
-}
-
-function Avatar({ friend, size = 28 }: { friend: Friend; size?: number }) {
-  return (
-    <span style={{ width: size, height: size, borderRadius: 999, background: friendColor(friend), color: "#FFFBF1", fontFamily: "var(--font-lora)", fontSize: size * 0.43, display: "grid", placeItems: "center", flexShrink: 0 }}>
-      {friend.name[0]}
-    </span>
-  );
-}
-
-// ─── Feature 1: Heatmap ──────────────────────────────────────────────────────
-
-type HeatmapDay = { date: Date; count: number; key: string; future: boolean };
-
-function InteractionHeatmap({ friends }: { friends: Friend[] }) {
-  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
-
-  const dateCounts = new Map<string, number>();
-  friends.forEach((f) =>
-    (f.interactions ?? []).forEach((i) => {
-      const k = i.date.slice(0, 10);
-      dateCounts.set(k, (dateCounts.get(k) ?? 0) + 1);
-    })
+function buildHeatmap(friends: Friend[]): HeatWeek[] {
+  const WEEKS = 26;
+  const DAYS = 7;
+  const grid: HeatCell[][] = Array.from({ length: WEEKS }, () =>
+    Array.from({ length: DAYS }, () => ({ date: new Date(), count: 0, level: 0, moments: [] }))
   );
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const lastSunday = new Date(today);
+  lastSunday.setDate(today.getDate() - today.getDay());
 
-  // Start from 52 weeks ago, aligned to Monday
-  const start = new Date(today);
-  start.setDate(today.getDate() - 363);
-  const startDay = start.getDay();
-  start.setDate(start.getDate() - (startDay === 0 ? 6 : startDay - 1));
+  // Place real interactions on their actual dates
+  friends.forEach((f) => {
+    (f.interactions ?? []).forEach((i) => {
+      const d = new Date(i.date);
+      d.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((lastSunday.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+      const wBack = Math.floor(diffDays / 7);
+      const dayOfWeek = d.getDay();
+      const wi = WEEKS - 1 - wBack;
+      if (wi < 0 || wi >= WEEKS) return;
+      grid[wi][dayOfWeek].moments.push({ friend: f, interaction: i });
+      grid[wi][dayOfWeek].count++;
+    });
+  });
 
-  const days: HeatmapDay[] = [];
-  const cursor = new Date(start);
-  while (cursor <= today) {
-    const key = cursor.toISOString().slice(0, 10);
-    days.push({ date: new Date(cursor), count: dateCounts.get(key) ?? 0, key, future: false });
-    cursor.setDate(cursor.getDate() + 1);
+  return grid.map((week, wi) =>
+    week.map((cell, di) => {
+      const date = new Date(lastSunday);
+      date.setDate(lastSunday.getDate() - (WEEKS - 1 - wi) * 7 + di);
+      let level = 0;
+      if (cell.count === 1) level = 1;
+      else if (cell.count === 2) level = 2;
+      else if (cell.count === 3) level = 3;
+      else if (cell.count >= 4) level = 4;
+      return { ...cell, level, date };
+    })
+  );
+}
+
+function computeStreaks(weeks: HeatWeek[]): { current: number; longest: number } {
+  const active = weeks.map((w) => w.some((c) => c.count > 0));
+  let longest = 0, run = 0;
+  for (const a of active) {
+    if (a) { run++; longest = Math.max(longest, run); }
+    else run = 0;
   }
-
-  // Group into weeks (columns of 7)
-  const weeks: HeatmapDay[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    const week = days.slice(i, i + 7);
-    while (week.length < 7) week.push({ date: new Date(), count: 0, key: `pad-${i}-${week.length}`, future: true });
-    weeks.push(week);
+  let current = 0;
+  for (let i = active.length - 1; i >= 0; i--) {
+    if (active[i]) current++; else break;
   }
+  return { current, longest };
+}
 
-  // Month labels
-  const monthLabels: { col: number; label: string }[] = [];
-  weeks.forEach((week, col) => {
-    if (col === 0) {
-      monthLabels.push({ col, label: week[0].date.toLocaleString("en-US", { month: "short" }) });
+function monthLabels(weekCount: number): Array<{ label: string; start: number; span: number }> {
+  const today = new Date();
+  const startOfLast = new Date(today);
+  startOfLast.setDate(today.getDate() - (weekCount - 1) * 7);
+  const result: Array<{ label: string; start: number; span: number }> = [];
+  let prevMonth = -1;
+  for (let i = 0; i < weekCount; i++) {
+    const d = new Date(startOfLast);
+    d.setDate(startOfLast.getDate() + i * 7);
+    const m = d.getMonth();
+    if (m !== prevMonth) {
+      result.push({ label: d.toLocaleString("en-US", { month: "short" }), start: i, span: 1 });
+      prevMonth = m;
     } else {
-      const prev = weeks[col - 1][0].date;
-      const cur = week[0].date;
-      if (prev.getMonth() !== cur.getMonth()) {
-        monthLabels.push({ col, label: cur.toLocaleString("en-US", { month: "short" }) });
-      }
+      result[result.length - 1].span++;
     }
-  });
-
-  const cellSize = 11;
-  const gap = 2;
-  const cellStep = cellSize + gap;
-
-  function cellColor(count: number, future: boolean) {
-    if (future) return "transparent";
-    if (count === 0) return "#F0E9DE";
-    if (count === 1) return "#B8D4C8";
-    if (count === 2) return "#6BAF85";
-    return "#3D7A58";
   }
+  return result.filter((m) => m.span >= 2);
+}
 
-  // Weekly trend for recharts (last 12 weeks)
-  const weekMs = 7 * 24 * 60 * 60 * 1000;
-  const trendData = Array.from({ length: 12 }, (_, i) => {
-    const wStart = new Date(floorToMonday(new Date()) - (11 - i) * weekMs);
-    const wEnd = new Date(wStart.getTime() + weekMs);
-    const count = days.filter((d) => d.date >= wStart && d.date < wEnd && !d.future).reduce((s, d) => s + d.count, 0);
-    return { week: wStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }), count };
-  });
+// ─── Heatmap component ───────────────────────────────────────────────────────
+
+function Heatmap({ weeks, onCellClick }: { weeks: HeatWeek[]; onCellClick: (cell: HeatCell) => void }) {
+  const labels = monthLabels(weeks.length);
+  const dayLabels = ["", "Mon", "", "Wed", "", "Fri", ""];
 
   return (
-    <>
-      {tooltip && (
-        <div style={{ position: "fixed", left: tooltip.x + 12, top: tooltip.y - 36, background: "#2E2A24", color: "#FAF7F2", fontSize: 11, padding: "4px 8px", borderRadius: 4, pointerEvents: "none", zIndex: 1000, whiteSpace: "nowrap" }}>
-          {tooltip.text}
+    <div className="heatmap-wrap" aria-hidden="true">
+      <div className="hm-months">
+        <span />
+        {labels.map((m, i) => (
+          <span
+            key={i}
+            className="hm-month"
+            style={{ gridColumn: `${m.start + 2} / span ${m.span}`, fontSize: 9.5, fontFamily: "var(--mono)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--hint)", alignSelf: "center" }}
+          >{m.label}</span>
+        ))}
+      </div>
+      <div className="hm-grid">
+        <div className="hm-days">
+          {dayLabels.map((d, i) => <span key={i} className="hm-day">{d}</span>)}
         </div>
+        <div className="heatmap">
+          {weeks.map((week, wi) => (
+            <div className="hm-week" key={wi}>
+              {week.map((cell, di) => {
+                const dateLabel = cell.date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                const title = cell.count === 0 ? `${dateLabel} — no moments` : `${dateLabel} — ${cell.count} moment${cell.count === 1 ? "" : "s"}`;
+                return (
+                  <button
+                    key={di}
+                    type="button"
+                    className={`hm-cell hm-l${cell.level}${cell.count > 0 ? " hm-has" : ""}`}
+                    onClick={() => cell.count > 0 && onCellClick(cell)}
+                    title={title}
+                    aria-label={title}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── HealthPopover ────────────────────────────────────────────────────────────
+
+function HealthPopover({
+  group,
+  friends,
+  onClose,
+  onOpenFriend,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  group: "healthy" | "attention" | "overdue";
+  friends: Friend[];
+  onClose: () => void;
+  onOpenFriend: (id: string) => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      const t = (e.target as Element).closest?.(".health-leg-btn, .health-seg");
+      if (t) return;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const title = group === "healthy" ? "In rhythm" : group === "attention" ? "Due soon" : "Overdue";
+  const subtitle =
+    group === "healthy" ? "Friends you're seeing on cadence."
+    : group === "attention" ? "About time for a check-in."
+    : "Past your usual rhythm — worth reaching out.";
+
+  return (
+    <div
+      ref={ref}
+      className={`health-pop health-pop-${group}`}
+      role="dialog"
+      aria-label={title}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <span className="health-pop-tail" aria-hidden="true" />
+      <header className="health-pop-head">
+        <span className="health-pop-title">
+          <span className={`dot dot-${group}`} /> {title}
+          <span className="health-pop-count">{friends.length}</span>
+        </span>
+        <button className="health-pop-x" onClick={onClose} aria-label="Close">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <p className="health-pop-sub">{subtitle}</p>
+      {friends.length === 0 ? (
+        <p className="health-pop-empty">None right now.</p>
+      ) : (
+        <ul className="health-pop-list">
+          {friends.map((f) => {
+            const td = lastTextedDays(f);
+            const hd = lastHungDays(f);
+            const dayLabel =
+              group === "overdue"
+                ? `${Math.max(td === Infinity ? 0 : td - f.textFrequencyDays, hd === Infinity ? 0 : hd - f.hangoutFrequencyDays)}d over`
+                : group === "attention"
+                ? `due ~${Math.max(0, f.textFrequencyDays - (td === Infinity ? 0 : td))}d`
+                : "on cadence";
+            return (
+              <li key={f.id}>
+                <button className="health-pop-item" onClick={() => onOpenFriend(f.id)}>
+                  <FriendAvatar friend={f} size="sm" />
+                  <span className="health-pop-name">{f.name}</span>
+                  <span className={`health-pop-status fp-status-${group}`}>{dayLabel}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Monthly Report Modal ────────────────────────────────────────────────────
+
+type ReportData = {
+  monthLabel: string;
+  monthShort: string;
+  headline: string;
+  totalMoments: number;
+  texts: number;
+  hangs: number;
+  uniqueFriends: number;
+  topTwo: Array<{ f: Friend; n: number }>;
+  priorityText: string;
+  slipped: Array<{ f: Friend; weeks: number }>;
+  slippedText: string;
+  drifting: Array<{ f: Friend; ratio: number }>;
+  opener: string;
+  suggestion: { target: Friend; text: string } | null;
+  insight: { dayName: string; topFriend: Friend | null };
+};
+
+function buildMonthReport(friends: Friend[]): ReportData {
+  const now = new Date();
+  const currentMonthName = now.toLocaleString("en-US", { month: "long" });
+
+  // Previous month boundaries
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59); // last moment of prev month
+  const monthLabel = prev.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const monthShort = monthLabel.split(" ")[0];
+  const monthKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+
+  // Count interactions that happened in the previous month only
+  let texts = 0, hangs = 0;
+  const byFriend = new Map<string, number>();
+  const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+
+  friends.forEach((f) => {
+    (f.interactions ?? []).forEach((i) => {
+      if (!i.date.startsWith(monthKey)) return;
+      if (i.type === "hangout") hangs++;
+      else if (i.type === "text") texts++;
+      byFriend.set(f.id, (byFriend.get(f.id) ?? 0) + 1);
+      dayCounts[new Date(i.date).getDay()]++;
+    });
+  });
+
+  const totalMoments = texts + hangs;
+  const uniqueFriends = byFriend.size;
+
+  // Top friends ranked by last month's interaction count
+  const topThree = [...byFriend.entries()]
+    .map(([id, n]) => ({ f: friends.find((x) => x.id === id)!, n }))
+    .filter((x) => x.f)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 3);
+
+  const topTwo = topThree.slice(0, 2);
+
+  // "Slipped through" = friends with zero interactions last month.
+  // Weeks count is from their last contact date as of the end of last month.
+  const slipped = friends
+    .filter((f) => !byFriend.has(f.id))
+    .map((f) => {
+      const lastBefore = (f.interactions ?? [])
+        .filter((i) => new Date(i.date) <= prevEnd)
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+      const days = lastBefore
+        ? Math.floor((prevEnd.getTime() - new Date(lastBefore.date).getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
+      return { f, days, weeks: Math.max(1, Math.round(days / 7)) };
+    })
+    .sort((a, b) => b.days - a.days)
+    .slice(0, 2);
+
+  // "Drifting" = currently overdue (used for this month's suggestion)
+  const drifting = friends
+    .map((f) => {
+      const td = lastTextedDays(f);
+      const hd = lastHungDays(f);
+      const tR = td === Infinity ? 2 : td / f.textFrequencyDays;
+      const hR = hd === Infinity ? 2 : hd / f.hangoutFrequencyDays;
+      return { f, ratio: Math.max(tR, hR) };
+    })
+    .filter((x) => x.ratio > 1)
+    .sort((a, b) => b.ratio - a.ratio)
+    .slice(0, 3);
+
+  // Peak day of the week — last month only
+  const peakDay = totalMoments > 0 ? dayCounts.indexOf(Math.max(...dayCounts)) : -1;
+  const dayName = peakDay >= 0
+    ? ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"][peakDay]
+    : "weekdays";
+
+  // Top friend = most interactions last month
+  const topFriend = topThree[0]?.f ?? null;
+
+  const opener =
+    totalMoments >= 14
+      ? `${monthShort} was a solid month. ${totalMoments} interactions across ${uniqueFriends} friends, ${hangs} of them in person.`
+      : totalMoments >= 6
+      ? `${monthShort} was decent. ${totalMoments} interactions with ${uniqueFriends} friends. Not your busiest but you kept things moving.`
+      : totalMoments > 0
+      ? `${monthShort} was pretty quiet. Only ${totalMoments} interaction${totalMoments === 1 ? "" : "s"} logged. Easy to pick back up in ${currentMonthName}.`
+      : `Nothing logged in ${monthShort}. ${currentMonthName} is a good time to start fresh.`;
+
+  const priorityText =
+    topTwo.length >= 2
+      ? `You put the most into ${topTwo[0].f.name.split(" ")[0]} and ${topTwo[1].f.name.split(" ")[0]}. Together that was ${topTwo[0].n + topTwo[1].n} out of ${totalMoments} interactions.`
+      : topTwo.length === 1
+      ? `${topTwo[0].f.name.split(" ")[0]} got most of your energy. ${topTwo[0].n} out of ${totalMoments} interactions.`
+      : "No standout last month. You spread your attention pretty evenly.";
+
+  const slippedText =
+    slipped.length >= 2
+      ? `${slipped[0].f.name.split(" ")[0]} and ${slipped[1].f.name.split(" ")[0]} got no contact in ${monthShort}. ${slipped[0].f.name.split(" ")[0]} was ${slipped[0].weeks} week${slipped[0].weeks === 1 ? "" : "s"} out by end of month.`
+      : slipped.length === 1
+      ? `${slipped[0].f.name.split(" ")[0]} got no contact in ${monthShort}. It had been ${slipped[0].weeks} week${slipped[0].weeks === 1 ? "" : "s"} by the end of the month.`
+      : `Everyone got at least some contact in ${monthShort}.`;
+
+  // Suggestion: prioritize most overdue friend for this month
+  const sgTarget = drifting[0]?.f ?? slipped[0]?.f ?? null;
+  const suggestion = sgTarget
+    ? { target: sgTarget, text: `Reach out to ${sgTarget.name.split(" ")[0]} in ${currentMonthName}. A quick message is enough.` }
+    : null;
+
+  return {
+    monthLabel, monthShort, headline: `${monthShort} looked like this.`,
+    totalMoments, texts, hangs, uniqueFriends,
+    topTwo, priorityText, slipped, slippedText, drifting,
+    opener, suggestion,
+    insight: { dayName, topFriend },
+  };
+}
+
+function MonthReportContent({
+  report,
+  friends,
+  aiReport,
+  onOpenFriend,
+}: {
+  report: ReportData;
+  friends: Friend[];
+  aiReport: string | null;
+  onOpenFriend: (id: string) => void;
+}) {
+  const nextMonthName = new Date().toLocaleString("en-US", { month: "long" });
+
+  return (
+    <div className="report-doc">
+      <header className="report-doc-head">
+        <div className="report-doc-eyebrow">
+          <span>monthly report</span>
+        </div>
+        <h2 className="report-doc-title">{report.monthLabel}</h2>
+        <p className="report-doc-sub">{report.headline}</p>
+      </header>
+
+      <div className="report-stats">
+        {[
+          { num: report.totalMoments, lbl: "Interactions" },
+          { num: report.uniqueFriends, lbl: "Friends" },
+          { num: report.texts, lbl: "Texts" },
+          { num: report.hangs, lbl: "Hangouts" },
+        ].map(({ num, lbl }) => (
+          <div className="report-stat" key={lbl}>
+            <span className="report-stat-num">{num}</span>
+            <span className="report-stat-lbl">{lbl}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 01 — Snapshot */}
+      <section className="rd-section">
+        <div className="rd-num">01</div>
+        <h3 className="rd-h">This month</h3>
+        <p className="rd-p rd-p-large">{aiReport ?? report.opener}</p>
+      </section>
+
+      {/* 02 — Who you prioritized */}
+      {report.topTwo.length > 0 && (
+        <section className="rd-section">
+          <div className="rd-num">02</div>
+          <h3 className="rd-h">Who you prioritized</h3>
+          <p className="rd-p">{report.priorityText}</p>
+          <ul className="rd-friends" style={{ marginTop: 10 }}>
+            {report.topTwo.map(({ f, n }, i) => (
+              <li key={f.id}>
+                <button className="rd-friend" onClick={() => onOpenFriend(f.id)}>
+                  <span className="rd-friend-rank">{i + 1}</span>
+                  <FriendAvatar friend={f} size="sm" />
+                  <span className="rd-friend-main">
+                    <span className="rd-friend-name">{f.name}</span>
+                    <span className="rd-friend-sub">{n} interaction{n === 1 ? "" : "s"} · {f.category}</span>
+                  </span>
+                  <span className="rd-friend-arr">→</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
-      {/* Weekly trend sparkline */}
-      <div style={{ marginBottom: 16, height: 48 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#A68B50" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#A68B50" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="week" hide />
-            <RechartTooltip
-              contentStyle={{ background: "#2E2A24", border: "none", borderRadius: 4, fontSize: 11, color: "#FAF7F2" }}
-              itemStyle={{ color: "#FAF7F2" }}
-              formatter={(v) => [`${v} interaction${v !== 1 ? "s" : ""}`, ""]}
-            />
-            <Area type="monotone" dataKey="count" stroke="#A68B50" strokeWidth={1.5} fill="url(#trendGrad)" dot={false} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Grid */}
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "flex", gap: gap, minWidth: "max-content" }}>
-          {/* Day labels */}
-          <div style={{ display: "flex", flexDirection: "column", gap, paddingTop: 18, width: 24, flexShrink: 0 }}>
-            {["Mon", "", "Wed", "", "Fri", "", ""].map((lbl, i) => (
-              <div key={i} style={{ height: cellSize, fontSize: 9, color: "#9A8F82", lineHeight: `${cellSize}px`, userSelect: "none" }}>
-                {lbl}
-              </div>
+      {/* 03 — Who slipped */}
+      {report.slipped.length > 0 && (
+        <section className="rd-section">
+          <div className="rd-num">03</div>
+          <h3 className="rd-h">Who slipped through</h3>
+          <p className="rd-p">{report.slippedText}</p>
+          <ul className="rd-friends" style={{ marginTop: 10 }}>
+            {report.slipped.map(({ f, weeks }) => (
+              <li key={f.id}>
+                <button className="rd-friend" onClick={() => onOpenFriend(f.id)}>
+                  <span className="rd-friend-rank rd-friend-rank-warn">!</span>
+                  <FriendAvatar friend={f} size="sm" />
+                  <span className="rd-friend-main">
+                    <span className="rd-friend-name">{f.name}</span>
+                    <span className="rd-friend-sub">{weeks} week{weeks === 1 ? "" : "s"} since last contact</span>
+                  </span>
+                  <span className="rd-friend-arr">→</span>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
+        </section>
+      )}
 
-          {/* Weeks */}
-          <div>
-            {/* Month labels */}
-            <div style={{ position: "relative", height: 16, marginBottom: 2 }}>
-              {monthLabels.map(({ col, label }) => (
-                <span key={`${col}-${label}`} style={{ position: "absolute", left: col * cellStep, fontSize: 9.5, color: "#9A8F82", userSelect: "none" }}>
-                  {label}
-                </span>
-              ))}
-            </div>
+      {/* 04 — Pattern */}
+      <section className="rd-section">
+        <div className="rd-num">04</div>
+        <h3 className="rd-h">Pattern noticed</h3>
+        <p className="rd-p">
+          You tend to reach out on <strong>{report.insight.dayName}</strong>.{" "}
+          {report.hangs >= report.texts
+            ? "You showed up in person about as much as over text. That's rare."
+            : `Texts outpaced hangouts ${report.texts} to ${report.hangs}. The connection is there, it just lives mostly over text.`}
+        </p>
+      </section>
 
-            {/* Cell grid */}
-            <div style={{ display: "flex", gap }}>
-              {weeks.map((week, wi) => (
-                <div key={wi} style={{ display: "flex", flexDirection: "column", gap }}>
-                  {week.map((day) => {
-                    const dateLabel = day.date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                    const tipText = day.future
-                      ? ""
-                      : day.count === 0
-                        ? `No interactions on ${dateLabel}`
-                        : `${day.count} interaction${day.count !== 1 ? "s" : ""} on ${dateLabel}`;
-                    return (
-                      <div
-                        key={day.key}
-                        style={{ width: cellSize, height: cellSize, borderRadius: 2, background: cellColor(day.count, day.future), cursor: day.future ? "default" : "default", flexShrink: 0 }}
-                        onMouseEnter={(e) => { if (!day.future) setTooltip({ text: tipText, x: e.clientX, y: e.clientY }); }}
-                        onMouseMove={(e) => { if (!day.future) setTooltip({ text: tipText, x: e.clientX, y: e.clientY }); }}
-                        onMouseLeave={() => setTooltip(null)}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* 05 — Suggestion */}
+      {report.suggestion && (
+        <section className="rd-section rd-section-suggest">
+          <div className="rd-num">05</div>
+          <h3 className="rd-h">For {nextMonthName}</h3>
+          <p className="rd-p rd-p-large">{report.suggestion.text}</p>
+          <button className="rd-cta" onClick={() => onOpenFriend(report.suggestion!.target.id)}>
+            Open {report.suggestion.target.name.split(" ")[0]}&apos;s page <span className="arr">→</span>
+          </button>
+        </section>
+      )}
+
+      <footer className="report-doc-foot">
+        <span className="report-doc-foot-mark">friendkeeper</span>
+        <span className="report-doc-foot-meta">Generated {formatToday()}</span>
+      </footer>
+    </div>
+  );
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  size,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  size?: "lg";
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="modal-scrim" onClick={onClose}>
+      <div className={`modal${size === "lg" ? " modal-lg" : ""}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <header className="modal-head">
+          <h2 className="modal-title">{title}</h2>
+          <button className="modal-x" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </header>
+        <div className="modal-body">{children}</div>
       </div>
-
-      {/* Legend */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
-        <span style={{ fontSize: 9.5, color: "#9A8F82" }}>Less</span>
-        {["#F0E9DE", "#B8D4C8", "#6BAF85", "#3D7A58"].map((c) => (
-          <div key={c} style={{ width: cellSize, height: cellSize, borderRadius: 2, background: c }} />
-        ))}
-        <span style={{ fontSize: 9.5, color: "#9A8F82" }}>More</span>
-      </div>
-    </>
+    </div>,
+    document.body
   );
 }
 
@@ -337,6 +592,7 @@ function InteractionHeatmap({ friends }: { friends: Friend[] }) {
 
 export default function Dashboard() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const firstName = user?.firstName ?? "there";
   const router = useRouter();
 
   const [isGuest, setIsGuest] = useState(false);
@@ -344,24 +600,24 @@ export default function Dashboard() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [ready, setReady] = useState(false);
 
-  // Feature 3: Monthly report
   const [monthlyReport, setMonthlyReport] = useState<string | null>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
-  // Feature 4: Conversation starter
-  const [convoStarter, setConvoStarter] = useState<string | null>(null);
-  const [convoFriend, setConvoFriend] = useState<Friend | null>(null);
-  const [convoLoading, setConvoLoading] = useState(false);
-  const [convoExcluded, setConvoExcluded] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState<HeatCell | null>(null);
+  const [healthGroup, setHealthGroup] = useState<"healthy" | "attention" | "overdue" | null>(null);
+  const [openCat, setOpenCat] = useState<string | null>(null);
 
-  // Feature 5: Who to message next
-  const [reachOutReasons, setReachOutReasons] = useState<Record<string, string>>({});
-  const [reachOutLoading, setReachOutLoading] = useState(false);
-
-  // Existing AI summary
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const healthHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showHealth = (g: "healthy" | "attention" | "overdue") => {
+    if (healthHideTimer.current) clearTimeout(healthHideTimer.current);
+    setHealthGroup(g);
+  };
+  const cancelHealthHide = () => { if (healthHideTimer.current) clearTimeout(healthHideTimer.current); };
+  const scheduleHealthHide = () => {
+    if (healthHideTimer.current) clearTimeout(healthHideTimer.current);
+    healthHideTimer.current = setTimeout(() => setHealthGroup(null), 120);
+  };
 
   const fetchedRef = useRef(false);
 
@@ -377,153 +633,51 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn]);
 
-  // All AI fetches — run once after ready
   useEffect(() => {
     if (!ready || !userId || friends.length === 0 || fetchedRef.current) return;
     fetchedRef.current = true;
 
-    // Existing AI overview
-    const friendsData = friends.map((f) => {
-      const score = getHealthScore(f);
-      const textDays = getDaysAgo(f.lastTexted);
-      const hangoutDays = getDaysAgo(f.lastHungOut);
-      const minDays = Math.min(textDays, hangoutDays);
-      const lastContact = minDays === Infinity ? "never" : minDays === 0 ? "today" : `${minDays} days ago`;
-      return { name: f.name, category: f.category, healthLabel: getHealthLabel(score), lastContact };
-    });
-    setAiSummaryLoading(true);
-    fetch("/api/ai/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: friendsData }) })
-      .then((r) => r.json())
-      .then((d: { summary: string | null }) => setAiSummary(d.summary ?? null))
-      .catch(() => {})
-      .finally(() => setAiSummaryLoading(false));
-
-    // Feature 3: Monthly report (cached)
-    const monthKey = new Date().toISOString().slice(0, 7);
-    const monthCacheKey = `friendkeeper-monthly-report-${monthKey}-${userId}`;
-    const cachedReport = localStorage.getItem(monthCacheKey);
-    if (cachedReport) {
-      setMonthlyReport(cachedReport);
+    // Monthly report (previous month)
+    const prevMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+    const monthKey = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
+    const cacheKey = `friendkeeper-monthly-report-v2-${monthKey}-${userId}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setMonthlyReport(cached);
     } else {
-      const monthName = new Date().toLocaleString("en-US", { month: "long" });
-      const monthlyFriends = friends.map((f) => ({
+      const monthName = prevMonth.toLocaleString("en-US", { month: "long" });
+      const mFriends = friends.map((f) => ({
         name: f.name,
         interactions: (f.interactions ?? []).filter((i) => i.date.startsWith(monthKey)),
       })).filter((f) => f.interactions.length > 0);
-      if (monthlyFriends.length > 0) {
+      if (mFriends.length > 0) {
         setMonthlyLoading(true);
-        fetch("/api/ai/monthly", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: monthlyFriends, monthName }) })
+        fetch("/api/ai/monthly", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: mFriends, monthName }) })
           .then((r) => r.json())
           .then((d: { report: string | null }) => {
-            if (d.report) { setMonthlyReport(d.report); localStorage.setItem(monthCacheKey, d.report); }
+            if (d.report) { setMonthlyReport(d.report); localStorage.setItem(cacheKey, d.report); }
           })
           .catch(() => {})
           .finally(() => setMonthlyLoading(false));
       }
     }
 
-    // Feature 4: Conversation starter (cached per week)
-    const weekKey = getISOWeekKey();
-    const convoCacheKey = `friendkeeper-convo-starter-${weekKey}-${userId}`;
-    const cachedConvo = localStorage.getItem(convoCacheKey);
-    if (cachedConvo) {
-      try {
-        const parsed = JSON.parse(cachedConvo) as { friendId: string; starter: string };
-        const cf = friends.find((f) => f.id === parsed.friendId);
-        if (cf) { setConvoFriend(cf); setConvoStarter(parsed.starter); }
-      } catch { /* ignore stale cache */ }
-    } else {
-      const sorted = [...friends].sort((a, b) => Math.min(getDaysAgo(b.lastTexted), getDaysAgo(b.lastHungOut)) - Math.min(getDaysAgo(a.lastTexted), getDaysAgo(a.lastHungOut)));
-      if (sorted.length > 0) fetchConvoStarter(sorted[0], userId, convoCacheKey);
-    }
-
-    // Feature 5: Who to message next (always fresh)
-    const top3 = rankForOutreach(friends);
-    if (top3.length > 0) {
-      const reachFriends = top3.map((f) => {
-        const daysSince = Math.min(getDaysAgo(f.lastTexted), getDaysAgo(f.lastHungOut));
-        return {
-          name: f.name,
-          category: f.category,
-          daysSince: daysSince === Infinity ? 9999 : daysSince,
-          frequencyDays: f.textFrequencyDays,
-          overdueBy: Math.max(0, (daysSince === Infinity ? 9999 : daysSince) - f.textFrequencyDays),
-          healthScore: getHealthScore(f),
-        };
-      });
-      setReachOutLoading(true);
-      fetch("/api/ai/reach-out", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: reachFriends }) })
-        .then((r) => r.json())
-        .then((d: { reasons: Array<{ name: string; reason: string }> }) => {
-          const map: Record<string, string> = {};
-          (d.reasons ?? []).forEach(({ name, reason }) => { map[name] = reason; });
-          setReachOutReasons(map);
-        })
-        .catch(() => {})
-        .finally(() => setReachOutLoading(false));
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId]);
 
-  function fetchConvoStarter(friend: Friend, uid: string, cacheKey: string) {
-    setConvoFriend(friend);
-    setConvoStarter(null);
-    setConvoLoading(true);
-    fetch("/api/ai/starter", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: friend.name,
-        notes: friend.notes,
-        interactions: (friend.interactions ?? []).slice(0, 6),
-      }),
-    })
-      .then((r) => r.json())
-      .then((d: { starter: string | null }) => {
-        if (d.starter) {
-          setConvoStarter(d.starter);
-          localStorage.setItem(cacheKey, JSON.stringify({ friendId: friend.id, starter: d.starter }));
-        }
+  function getTop3ForOutreach(fs: Friend[]): Friend[] {
+    return [...fs]
+      .map((f) => {
+        const td = lastTextedDays(f);
+        const hd = lastHungDays(f);
+        const tR = td === Infinity ? 2 : td / f.textFrequencyDays;
+        const hR = hd === Infinity ? 2 : hd / f.hangoutFrequencyDays;
+        return { f, ratio: Math.max(tR, hR) };
       })
-      .catch(() => {})
-      .finally(() => setConvoLoading(false));
-  }
-
-  function handleSuggestAnother() {
-    const weekKey = getISOWeekKey();
-    const convoCacheKey = `friendkeeper-convo-starter-${weekKey}-${userId}`;
-    const excluded = convoFriend ? [...convoExcluded, convoFriend.id] : convoExcluded;
-    setConvoExcluded(excluded);
-    const sorted = [...friends]
-      .filter((f) => !excluded.includes(f.id))
-      .sort((a, b) => Math.min(getDaysAgo(b.lastTexted), getDaysAgo(b.lastHungOut)) - Math.min(getDaysAgo(a.lastTexted), getDaysAgo(a.lastHungOut)));
-    if (sorted.length > 0 && userId) fetchConvoStarter(sorted[0], userId, convoCacheKey);
-  }
-
-  function handleRegenerateMonthly() {
-    if (!userId) return;
-    const monthKey = new Date().toISOString().slice(0, 7);
-    const monthCacheKey = `friendkeeper-monthly-report-${monthKey}-${userId}`;
-    localStorage.removeItem(monthCacheKey);
-    setMonthlyReport(null);
-    const monthName = new Date().toLocaleString("en-US", { month: "long" });
-    const monthlyFriends = friends.map((f) => ({
-      name: f.name,
-      interactions: (f.interactions ?? []).filter((i) => i.date.startsWith(monthKey)),
-    })).filter((f) => f.interactions.length > 0);
-    if (monthlyFriends.length === 0) return;
-    setMonthlyLoading(true);
-    fetch("/api/ai/monthly", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: monthlyFriends, monthName }) })
-      .then((r) => r.json())
-      .then((d: { report: string | null }) => {
-        if (d.report) { setMonthlyReport(d.report); localStorage.setItem(monthCacheKey, d.report); }
-      })
-      .catch(() => {})
-      .finally(() => setMonthlyLoading(false));
-  }
-
-  async function copyToClipboard(text: string) {
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* noop */ }
+      .filter(({ ratio }) => ratio >= 0.7)
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, 3)
+      .map(({ f }) => f);
   }
 
   function exitGuestMode() {
@@ -531,344 +685,438 @@ export default function Dashboard() {
     router.push("/sign-in");
   }
 
-  if (!ready) return <div style={{ height: "100%", background: "#FAF7F2" }} />;
+  function goToFriend(id: string) {
+    sessionStorage.setItem("friendkeeper-selected-friend", id);
+    router.push("/");
+  }
 
-  // ── Analytics ─────────────────────────────────────────────────────────────
+  // ── Computed data (all hooks must be before any conditional return) ────────
+  const buckets = useMemo(() => {
+    const out: Record<string, Friend[]> = { healthy: [], attention: [], overdue: [] };
+    friends.forEach((f) => out[statusFor(f)].push(f));
+    return out;
+  }, [friends]);
 
+  const heatmap = useMemo(() => buildHeatmap(friends), [friends]);
+  const streaks = useMemo(() => computeStreaks(heatmap), [heatmap]);
+  const report = useMemo(() => buildMonthReport(friends), [friends]);
+
+  const reachOut = useMemo(() => {
+    return [...friends]
+      .map((f) => {
+        const td = lastTextedDays(f);
+        const hd = lastHungDays(f);
+        const tR = td === Infinity ? 2 : td / f.textFrequencyDays;
+        const hR = hd === Infinity ? 2 : hd / f.hangoutFrequencyDays;
+        const worst = Math.max(tR, hR);
+        const dim = tR >= hR ? "text" : "hangout";
+        return { f, ratio: worst, dim };
+      })
+      .filter(({ ratio }) => ratio >= 0.7)
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, 3)
+      .map(({ f, dim }) => {
+        const days = dim === "text"
+          ? (lastTextedDays(f) === Infinity ? "∞" : String(lastTextedDays(f)))
+          : (lastHungDays(f) === Infinity ? "∞" : String(lastHungDays(f)));
+        return { f, dim, days };
+      });
+  }, [friends]);
+
+  const recent = useMemo((): Array<{ friend: Friend; interaction: Interaction; key: string }> => {
+    const items: Array<{ friend: Friend; interaction: Interaction; key: string }> = [];
+    friends.forEach((f) => (f.interactions ?? []).forEach((i, idx) => items.push({ friend: f, interaction: i, key: f.id + idx })));
+    return items.sort((a, b) => b.interaction.date.localeCompare(a.interaction.date)).slice(0, 5);
+  }, [friends]);
+
+  const categories = useMemo(() => {
+    const order = ["close friend", "family", "coworker", "classmate", "other"];
+    const m: Record<string, number> = {};
+    friends.forEach((f) => { m[f.category] = (m[f.category] ?? 0) + 1; });
+    return order.filter((k) => m[k]).map((k) => [k, m[k]] as [string, number]);
+  }, [friends]);
+
+  const insight = report.insight;
   const total = friends.length;
-  const healthy = friends.filter((f) => getHealthScore(f) >= 75);
-  const needsAttention = friends.filter((f) => { const s = getHealthScore(f); return s >= 45 && s < 75; });
-  const overdue = friends.filter((f) => getHealthScore(f) < 45);
-  const pct = (n: number) => total === 0 ? "0%" : `${Math.round((n / total) * 100)}%`;
-  const overdueByUrgency = [...overdue].sort((a, b) => getUrgency(b) - getUrgency(a));
-  const recentlyActive = friends.filter((f) => { const last = Math.min(getDaysAgo(f.lastTexted), getDaysAgo(f.lastHungOut)); return last <= 7; }).sort((a, b) => Math.min(getDaysAgo(a.lastTexted), getDaysAgo(a.lastHungOut)) - Math.min(getDaysAgo(b.lastTexted), getDaysAgo(b.lastHungOut)));
-  const neverContacted = friends.filter((f) => !f.lastTexted && !f.lastHungOut);
-  const byCategory = CATEGORIES.map((cat) => ({ cat, count: friends.filter((f) => f.category === cat).length })).filter((c) => c.count > 0);
-  const recentMoments: { friend: Friend; interaction: Interaction }[] = friends
-    .flatMap((f) => (f.interactions ?? []).map((i) => ({ friend: f, interaction: i })))
-    .sort((a, b) => b.interaction.date.localeCompare(a.interaction.date));
 
-  const { current: streakCurrent, longest: streakLongest } = calculateStreaks(friends);
-  const top3ForOutreach = rankForOutreach(friends);
-  const monthName = new Date().toLocaleString("en-US", { month: "long" });
+  if (!ready) return <div style={{ height: "100%", background: "var(--bg)" }} />;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  if (total === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg)", position: "relative", zIndex: 1 }}>
+        <AppNav />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1 }}>
+          <div style={{ textAlign: "center", padding: "48px" }}>
+            <p style={{ fontFamily: "var(--serif)", fontSize: 22, color: "var(--ink)", margin: "0 0 8px" }}>No friends yet</p>
+            <p style={{ fontSize: 13, color: "var(--hint)", margin: "0 0 20px" }}>Add friends on the Friends page to see your circle analytics.</p>
+            <button className="btn-prim" onClick={() => router.push("/")}>Go to Friends →</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#FAF7F2", position: "relative", zIndex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg)", position: "relative", zIndex: 1 }}>
       {isGuest && (
-        <div style={{ flexShrink: 0, background: "transparent", borderBottom: "1px solid #E0D9CE", padding: "6px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <p style={{ fontSize: 11.5, color: "#9A8F82", margin: 0 }}>You&apos;re using guest mode. Sign in to keep your data tied to your account.</p>
+        <div className="guest-banner">
+          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>You&apos;re using guest mode. Sign in to keep your data.</p>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            <a href="/sign-in" style={{ fontSize: 11.5, color: "#A68B50", textDecoration: "underline", textUnderlineOffset: 2 }}>Sign in</a>
-            <button onClick={exitGuestMode} style={{ background: "transparent", border: 0, fontSize: 11.5, color: "#9A8F82", cursor: "pointer" }}>Exit guest</button>
+            <a href="/sign-in" style={{ fontSize: 11.5, color: "var(--accent)", textDecoration: "underline" }}>Sign in</a>
+            <button onClick={exitGuestMode} style={{ background: "transparent", border: 0, fontSize: 11.5, color: "var(--hint)", cursor: "pointer" }}>Exit guest</button>
           </div>
         </div>
       )}
 
       <AppNav />
 
-      <main style={{ flex: 1, overflowY: "auto" }}>
-        <div style={{ maxWidth: 880, margin: "0 auto", padding: "32px 32px 48px" }}>
-          {total === 0 ? <EmptyState /> : (
-            <>
-              {/* Hero */}
-              <header style={{ marginBottom: 18 }}>
-                <div style={{ fontFamily: "monospace", fontSize: 9.5, letterSpacing: "0.18em", textTransform: "uppercase", color: "#6B6259", marginBottom: 8 }}>
-                  {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }).toUpperCase()}
-                </div>
-                <h1 style={{ fontFamily: "var(--font-lora)", fontWeight: 400, fontSize: 36, letterSpacing: "-0.02em", margin: "0 0 10px", color: "#2E2A24", lineHeight: 1.05 }}>
-                  Your circle.
-                </h1>
-                <p style={{ fontSize: 13.5, color: "#6B6259", margin: 0, lineHeight: 1.55 }}>
-                  <strong style={{ color: "#2E2A24", fontWeight: 500 }}>{total}</strong>{" "}friend{total !== 1 ? "s" : ""} across{" "}
-                  <strong style={{ color: "#2E2A24", fontWeight: 500 }}>{byCategory.length}</strong>{" "}categor{byCategory.length !== 1 ? "ies" : "y"}.
+      <div className="dash-scroll" style={{ position: "relative", zIndex: 1 }}>
+        <div className="dash">
+
+          {/* ─── Top: left (hero + panel) | right (reach out) ─── */}
+          <div className="dash-top">
+
+            {/* Left column */}
+            <div className="dash-left">
+              <header className="dash-hero">
+                <div className="dash-hero-eyebrow">{formatToday()}</div>
+                <h1 className="dash-hero-title">Good {timeOfDay()}, {firstName}.</h1>
+                <p className="dash-hero-sub" style={{ fontStyle: "italic" }}>
+                  {(() => {
+                    const overdueCount = friends.filter((f) => statusFor(f) === "overdue").length;
+                    const allHealthy = friends.length > 0 && friends.every((f) => statusFor(f) === "healthy");
+                    if (allHealthy) return "Your circle is in good shape.";
+                    if (streaks.current > 0) return `${total} friends. ${streaks.current}-week streak going.`;
+                    if (overdueCount > 0) return `${total} friends. ${overdueCount} need${overdueCount === 1 ? "s" : ""} a little love.`;
+                    return `${total} friend${total !== 1 ? "s" : ""} you're keeping close.`;
+                  })()}
                 </p>
               </header>
 
-              {/* Feature 2: Streak cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
-                <div style={{ background: "#F3EDE3", border: "1px solid #E0D9CE", borderRadius: 6, padding: "14px 16px" }}>
-                  <p style={{ fontFamily: "monospace", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "0 0 6px" }}>Current streak</p>
-                  {streakCurrent === 0 ? (
-                    <p style={{ fontSize: 12, color: "#9A8F82", margin: 0, fontStyle: "italic" }}>Start your streak today!</p>
+              {/* Monthly report — plain text */}
+              <div>
+                <p style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "16px 0 6px" }}>
+                  {report.monthLabel.split(" ")[0]} report
+                  {monthlyLoading && <span style={{ marginLeft: 6, opacity: 0.6 }}>…</span>}
+                </p>
+                <p style={{ fontFamily: "var(--serif)", fontSize: 15, fontWeight: 500, color: "#2E2A24", margin: "0 0 4px" }}>
+                  Your monthly report is out.
+                </p>
+                <p style={{ fontFamily: "var(--sans)", fontSize: 13, fontStyle: "italic", color: "#6B6259", margin: 0, lineHeight: 1.5 }}>
+                  {report.topTwo[0] ? (
+                    <><strong style={{ color: "#2E2A24", fontWeight: 500, fontStyle: "normal" }}>{report.topTwo[0].f.name.split(" ")[0]}</strong> shows up most{report.drifting[0] ? <>, <strong style={{ color: "#2E2A24", fontWeight: 500, fontStyle: "normal" }}>{report.drifting[0].f.name.split(" ")[0]}</strong> may be drifting.</> : "."}</>
                   ) : (
-                    <p style={{ fontFamily: "var(--font-lora)", fontSize: 28, fontWeight: 400, color: "#2E2A24", margin: 0, letterSpacing: "-0.02em" }}>
-                      {streakCurrent} <span style={{ fontSize: 14, color: "#6B6259" }}>week{streakCurrent !== 1 ? "s" : ""}</span> {"🔥"}
-                    </p>
+                    `${total} friends tracked this month.`
                   )}
-                </div>
-                <div style={{ background: "#F3EDE3", border: "1px solid #E0D9CE", borderRadius: 6, padding: "14px 16px" }}>
-                  <p style={{ fontFamily: "monospace", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "0 0 6px" }}>Longest streak</p>
-                  <p style={{ fontFamily: "var(--font-lora)", fontSize: 28, fontWeight: 400, color: "#2E2A24", margin: 0, letterSpacing: "-0.02em" }}>
-                    {streakLongest} <span style={{ fontSize: 14, color: "#6B6259" }}>week{streakLongest !== 1 ? "s" : ""}</span> {"⭐"}
-                  </p>
-                </div>
+                </p>
+                <button
+                  onClick={() => setReportOpen(true)}
+                  style={{ background: "transparent", border: 0, padding: 0, marginTop: 6, fontSize: 13, color: "#A68B50", cursor: "pointer", display: "block" }}
+                >
+                  Read full report →
+                </button>
               </div>
+            </div>
 
-              <Rule />
-
-              {/* Feature 5: Who to message next */}
-              <section style={{ marginBottom: 24 }}>
-                <SectionLabel>Who to message next</SectionLabel>
-                {top3ForOutreach.length === 0 ? (
-                  <p style={{ fontSize: 12, color: "#9A8F82", fontStyle: "italic" }}>Everyone is up to date!</p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {top3ForOutreach.map((f, idx) => {
-                      const score = getHealthScore(f);
-                      const dotColor = score >= 75 ? "#6BAF85" : score >= 45 ? "#D4A855" : "#C46060";
-                      const daysSince = Math.min(getDaysAgo(f.lastTexted), getDaysAgo(f.lastHungOut));
-                      const reason = reachOutReasons[f.name];
-                      return (
-                        <div key={f.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, padding: "12px 14px", background: "#F3EDE3", border: "1px solid #E0D9CE", borderRadius: 6, alignItems: "center" }}>
-                          <div style={{ position: "relative" }}>
-                            <Avatar friend={f} size={36} />
-                            <span style={{ position: "absolute", top: -2, right: -2, width: 10, height: 10, borderRadius: 999, background: dotColor, border: "2px solid #F3EDE3" }} />
-                            {idx === 0 && (
-                              <span style={{ position: "absolute", bottom: -2, left: "50%", transform: "translateX(-50%)", fontSize: 8, fontFamily: "monospace", background: "#A68B50", color: "#fff", padding: "1px 4px", borderRadius: 999, whiteSpace: "nowrap" }}>
-                                #1
-                              </span>
-                            )}
-                          </div>
-                          <div>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
-                              <span style={{ fontSize: 13.5, fontWeight: 500, color: "#2E2A24" }}>{f.name}</span>
-                              <span style={{ fontSize: 11, color: "#9A8F82" }}>
-                                {daysSince === Infinity ? "never contacted" : `${daysSince}d ago`}
-                              </span>
-                            </div>
-                            {reachOutLoading ? (
-                              <div style={{ height: 12, width: "70%", background: "#E8E1D6", borderRadius: 4 }} />
-                            ) : reason ? (
-                              <p style={{ fontSize: 12, color: "#6B6259", margin: 0, lineHeight: 1.5 }}>{reason}</p>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              <Rule />
-
-              {/* AI overview */}
-              {(aiSummaryLoading || aiSummary) && (
-                <section style={{ marginBottom: 20 }}>
-                  <AiCard label="AI overview" loading={aiSummaryLoading} loadingText="Reading your circle...">
-                    <ul style={{ margin: 0, padding: "0 0 0 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-                      {(aiSummary ?? "").split("\n").filter((l) => l.trim()).map((line, i) => (
-                        <li key={i} style={{ fontSize: 12.5, color: "#6B5E40", lineHeight: 1.5 }}>{line.replace(/^[-*]\s*/, "")}</li>
-                      ))}
-                    </ul>
-                  </AiCard>
-                </section>
-              )}
-
-              {/* Feature 4: Conversation starter of the week */}
-              {(convoLoading || convoFriend) && (
-                <section style={{ marginBottom: 20 }}>
-                  <AiCard label={`💬 Conversation starter of the week`} loading={convoLoading} loadingText="Finding the right opener...">
-                    {convoFriend && (
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <Avatar friend={convoFriend} size={26} />
-                          <span style={{ fontSize: 12.5, fontWeight: 500, color: "#2E2A24" }}>{convoFriend.name}</span>
-                        </div>
-                        {convoStarter && (
-                          <p style={{ fontSize: 13, color: "#6B5E40", margin: "0 0 10px", lineHeight: 1.6, fontStyle: "italic" }}>
-                            &ldquo;{convoStarter}&rdquo;
-                          </p>
-                        )}
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button
-                            onClick={() => convoStarter && copyToClipboard(convoStarter)}
-                            disabled={!convoStarter}
-                            style={{ fontSize: 11, padding: "4px 10px", borderRadius: 999, border: "1px solid rgba(166,139,80,0.4)", background: "transparent", color: "#A68B50", cursor: "pointer" }}
-                          >
-                            {copied ? "Copied!" : `Message ${convoFriend.name}`}
-                          </button>
-                          <button
-                            onClick={handleSuggestAnother}
-                            style={{ fontSize: 11, padding: "4px 10px", borderRadius: 999, border: "1px solid #E0D9CE", background: "transparent", color: "#9A8F82", cursor: "pointer" }}
-                          >
-                            Suggest another
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </AiCard>
-                </section>
-              )}
-
-              {/* Feature 3: Monthly report */}
-              {(monthlyLoading || monthlyReport) && (
-                <section style={{ marginBottom: 0 }}>
-                  <AiCard label={`${monthName} report`} loading={monthlyLoading} loadingText="Reflecting on your month...">
-                    {monthlyReport && (
-                      <div>
-                        <p style={{ fontSize: 13, color: "#6B5E40", margin: "0 0 10px", lineHeight: 1.65 }}>{monthlyReport}</p>
-                        <button
-                          onClick={handleRegenerateMonthly}
-                          style={{ fontSize: 11, padding: "3px 9px", borderRadius: 999, border: "1px solid rgba(166,139,80,0.3)", background: "transparent", color: "#A68B50", cursor: "pointer" }}
-                        >
-                          Regenerate
-                        </button>
-                      </div>
-                    )}
-                  </AiCard>
-                </section>
-              )}
-
-              <Rule />
-
-              {/* Circle health */}
-              <section style={{ marginBottom: 0 }}>
-                <SectionLabel>Circle health</SectionLabel>
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <div style={{ height: 10, display: "flex", gap: 2, background: "rgba(224,217,206,0.5)", borderRadius: 999, overflow: "hidden" }}>
-                    {healthy.length > 0 && <div style={{ flex: healthy.length, background: "#6BAF85" }} />}
-                    {needsAttention.length > 0 && <div style={{ flex: needsAttention.length, background: "#D4A855" }} />}
-                    {overdue.length > 0 && <div style={{ flex: overdue.length, background: "#C46060" }} />}
-                  </div>
-                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-                    {[
-                      { label: "Healthy", count: healthy.length, dotColor: "#6BAF85" },
-                      { label: "Attention", count: needsAttention.length, dotColor: "#D4A855" },
-                      { label: "Overdue", count: overdue.length, dotColor: "#C46060" },
-                    ].map(({ label, count, dotColor }) => (
-                      <div key={label} style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: 999, background: dotColor, alignSelf: "center", flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, color: "#2E2A24" }}>{label}</span>
-                        <span style={{ fontFamily: "var(--font-lora)", fontSize: 17, lineHeight: 1, letterSpacing: "-0.01em", color: "#2E2A24", fontWeight: 500, marginLeft: 2 }}>{count}</span>
-                        <span style={{ fontSize: 10.5, color: "#9A8F82", fontFamily: "monospace", letterSpacing: "0.04em" }}>{pct(count)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <Rule />
-
-              {/* 2-column: Needs love + Recent moments */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 60 }}>
-                <section>
-                  <SectionLabel>Needs a little love</SectionLabel>
-                  {overdueByUrgency.length === 0 ? (
-                    <p style={{ fontSize: 12, color: "#9A8F82", fontStyle: "italic" }}>Everyone&apos;s doing great!</p>
-                  ) : (
-                    <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px" }}>
-                      {overdueByUrgency.slice(0, 4).map((f) => {
-                        const st = getHealthScore(f) >= 75 ? "healthy" : getHealthScore(f) >= 45 ? "attention" : "overdue";
-                        const chipColors = st === "healthy" ? { color: "#6BAF85", borderColor: "rgba(107,175,133,0.35)" } : st === "attention" ? { color: "#D4A855", borderColor: "rgba(212,168,85,0.4)" } : { color: "#C46060", borderColor: "rgba(196,96,96,0.4)" };
-                        const lastDays = Math.min(getDaysAgo(f.lastTexted), getDaysAgo(f.lastHungOut));
-                        return (
-                          <li key={f.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px dashed #E0D9CE", borderRadius: 3 }}>
-                            <Avatar friend={f} size={28} />
-                            <span style={{ display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}>
-                              <span style={{ fontSize: 13, fontWeight: 500, color: "#2E2A24", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-                              <span style={{ fontSize: 11, color: "#9A8F82" }}>{f.category} · last {lastDays === Infinity ? "never" : `${lastDays}d ago`}</span>
+            {/* Right column — Reach out today */}
+            <div className="dash-reach">
+              <div className="section-label">Reach out today</div>
+              {reachOut.length === 0 ? (
+                <p style={{ fontSize: 12, color: "var(--hint)", fontStyle: "italic" }}>Everyone is up to date!</p>
+              ) : (
+                <ul className="reach-list">
+                  {reachOut.map(({ f, dim, days }) => {
+                    const st = statusFor(f);
+                    const topic = f.nextTopics?.[0];
+                    const nudge = topic
+                      ? `Ask about ${topic.replace(/[.?!]$/, "").toLowerCase()}`
+                      : dim === "hangout" ? "Plan something in person" : "Send them a message";
+                    return (
+                      <li key={f.id} className="reach-row">
+                        <button className="reach-main" onClick={() => goToFriend(f.id)}>
+                          <span className="reach-avatar" style={{ position: "relative" }}>
+                            <FriendAvatar friend={f} size="reach" />
+                            <span className={`reach-dot dot-${st}`} />
+                          </span>
+                          <span className="reach-text">
+                            <span className="reach-top">
+                              <span className="reach-name" style={{ whiteSpace: "nowrap" }}>{f.name}</span>
+                              <span className="reach-days">{days}d</span>
                             </span>
-                            <span style={{ fontFamily: "monospace", fontSize: 9.5, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 999, border: "1px solid", background: "transparent", whiteSpace: "nowrap", ...chipColors }}>{st}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </section>
+                            <span className="reach-reason">{nudge}</span>
+                          </span>
+                        </button>
+                        <button className="reach-action" onClick={() => goToFriend(f.id)}>
+                          {dim === "text" ? "Text" : "Plan"} →
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
 
-                <section>
-                  <SectionLabel>Recent moments</SectionLabel>
-                  {recentMoments.length === 0 ? (
-                    <p style={{ color: "#9A8F82", fontStyle: "italic", fontSize: 12, padding: "10px 4px" }}>No moments logged yet.</p>
-                  ) : (
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                      {recentMoments.slice(0, 4).map(({ friend: f, interaction: a }) => (
-                        <li key={a.id} style={{ display: "grid", gridTemplateColumns: "54px 1fr", padding: "8px 4px", borderBottom: "1px dashed #E0D9CE", gap: 8, alignItems: "baseline", borderRadius: 3 }}>
-                          <span style={{ fontFamily: "monospace", fontSize: 9.5, letterSpacing: "0.06em", color: "#9A8F82", textTransform: "uppercase", paddingTop: 2 }}>
-                            {formatLastInteraction(a.date).replace(" days ago", "d").replace(" day ago", "d")}
-                          </span>
-                          <span style={{ display: "flex", flexDirection: "column", gap: 1, fontSize: 12.5 }}>
-                            <span style={{ color: "#A68B50", fontWeight: 500 }}>{a.type === "text" ? "Texted" : "Hung out"}</span>
-                            <span style={{ color: "#2E2A24", fontWeight: 500 }}>{f.name}</span>
-                            {a.notes && <span style={{ fontSize: 11.5, color: "#9A8F82", fontStyle: "italic", marginTop: 2 }}>{a.notes}</span>}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
+          <hr className="rule" />
+
+          {/* ─── Heatmap + Recent moments ─── */}
+          <div className="dash-two">
+            <section>
+              <div className="section-label">Interactions</div>
+              {/* Sparkline + heatmap share one container so widths stay in sync */}
+              <div>
+                <p style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "0 0 8px" }}>Weekly trend</p>
+                {(() => {
+                  const trendData = heatmap.slice(-12).map((week) => ({
+                    week: `Week of ${week[0].date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+                    count: week.reduce((s, c) => s + c.count, 0),
+                  }));
+                  const SparkTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { week: string; count: number } }> }) => {
+                    if (!active || !payload?.length) return null;
+                    const { week, count } = payload[0].payload;
+                    return (
+                      <div style={{ background: "#2E2A24", color: "#FAF7F2", fontSize: 11, padding: "5px 10px", borderRadius: 4, border: "none", whiteSpace: "nowrap" }}>
+                        {week} · {count} interaction{count !== 1 ? "s" : ""}
+                      </div>
+                    );
+                  };
+                  return (
+                    <div style={{ height: 64, marginBottom: 36 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#A68B50" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#A68B50" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <RechartsTooltip content={<SparkTooltip />} />
+                          <Area type="monotone" dataKey="count" stroke="#A68B50" strokeWidth={1.5} fill="url(#sparkGrad)" dot={false} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })()}
+                <p style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "0 0 8px" }}>Daily activity</p>
+                <Heatmap weeks={heatmap} onCellClick={setSelectedCell} />
+              </div>
+              <div className="heatmap-foot">
+                <span className="heatmap-foot-label">last 6 months</span>
+                <span className="heatmap-scale">
+                  <span>less</span>
+                  <span className="heatmap-scale-cells">
+                    {[0, 1, 2, 3, 4].map((l) => <span key={l} className={`hm-cell hm-l${l}`} />)}
+                  </span>
+                  <span>more</span>
+                </span>
               </div>
 
-              <Rule />
+              {insight.topFriend && (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ margin: 0, fontSize: 12, color: "#9A8F82", lineHeight: 1.5, fontStyle: "italic" }}>
+                    Most active on <strong style={{ color: "#9A8F82", fontWeight: 500 }}>{insight.dayName}</strong>. <strong style={{ color: "#A68B50", fontWeight: 500 }}>{insight.topFriend.name.split(" ")[0]}</strong> shows up more than anyone.
+                  </p>
+                  <button
+                    onClick={() => goToFriend(insight.topFriend!.id)}
+                    style={{ background: "transparent", border: 0, padding: 0, marginTop: 3, fontSize: 11, color: "#A68B50", cursor: "pointer", display: "block" }}
+                  >
+                    See {insight.topFriend.name.split(" ")[0]}&apos;s page →
+                  </button>
+                </div>
+              )}
+            </section>
 
-              {/* Feature 1: Heatmap */}
-              <section>
-                <SectionLabel>Interaction frequency</SectionLabel>
-                <InteractionHeatmap friends={friends} />
-              </section>
-
-              <Rule />
-
-              {/* By category */}
-              <section>
-                <SectionLabel>By category</SectionLabel>
-                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                  {byCategory.map(({ cat, count }) => (
-                    <li key={cat} style={{ display: "grid", gridTemplateColumns: "110px 1fr 26px", alignItems: "center", gap: 12, padding: "6px 0" }}>
-                      <span style={{ fontSize: 12.5, color: "#2E2A24", textTransform: "capitalize" }}>{cat}</span>
-                      <span style={{ height: 3, background: "rgba(224,217,206,0.6)", borderRadius: 999, position: "relative", overflow: "hidden", display: "block" }}>
-                        <span style={{ position: "absolute", inset: "0 auto 0 0", background: "#A68B50", borderRadius: 999, width: (count / total) * 100 + "%" }} />
+            <section>
+              <div className="section-label">Recent moments</div>
+              {recent.length === 0 ? (
+                <p style={{ color: "var(--hint)", fontStyle: "italic", fontSize: 12 }}>No moments logged yet.</p>
+              ) : (
+                <ul className="moment-list">
+                  {recent.map(({ friend: f, interaction: i, key }) => (
+                    <li key={key} className="moment" onClick={() => goToFriend(f.id)}>
+                      <span className="moment-when">{daysAgoLabel(getDaysAgo(i.date))}</span>
+                      <span className="moment-body">
+                        <span className="moment-line">
+                          <span className="moment-who">{f.name.split(" ")[0]}</span>
+                          <span className="moment-kind"> · {kindWord(i.type)}</span>
+                        </span>
+                        {i.notes && <span className="moment-note">{i.notes}</span>}
                       </span>
-                      <span style={{ fontFamily: "monospace", fontSize: 10.5, color: "#9A8F82", textAlign: "right" }}>{count}</span>
                     </li>
                   ))}
                 </ul>
-              </section>
-
-              {recentlyActive.length > 0 && (
-                <>
-                  <Rule />
-                  <section>
-                    <SectionLabel>Active this week</SectionLabel>
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                      {recentlyActive.map((f) => {
-                        const days = Math.min(getDaysAgo(f.lastTexted), getDaysAgo(f.lastHungOut));
-                        return (
-                          <li key={f.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px dashed #E0D9CE" }}>
-                            <Avatar friend={f} size={26} />
-                            <span style={{ fontSize: 13, fontWeight: 500, color: "#2E2A24" }}>{f.name}</span>
-                            <span style={{ fontFamily: "monospace", fontSize: 10.5, color: "#6BAF85", letterSpacing: "0.04em" }}>{days === 0 ? "Today" : `${days}d ago`}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                </>
               )}
+            </section>
+          </div>
 
-              {neverContacted.length > 0 && (
-                <>
-                  <Rule />
-                  <section>
-                    <SectionLabel>Not yet reached out</SectionLabel>
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                      {neverContacted.map((f) => (
-                        <li key={f.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px dashed #E0D9CE" }}>
-                          <span style={{ width: 26, height: 26, borderRadius: 999, background: "#E0D9CE", color: "#9A8F82", fontFamily: "var(--font-lora)", fontSize: 11, display: "grid", placeItems: "center" }}>{f.name[0]}</span>
-                          <span style={{ fontSize: 13, fontWeight: 500, color: "#2E2A24" }}>{f.name}</span>
-                          <span style={{ fontFamily: "monospace", fontSize: 10.5, color: "#9A8F82", letterSpacing: "0.04em" }}>Never contacted</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                </>
-              )}
-            </>
-          )}
+          <hr className="rule" />
+
+          {/* ─── Circle health + By category ─── */}
+          <div className="dash-two">
+            <section className="health-section">
+              <div className="section-label">Circle health</div>
+              <div className="health-bar-wrap" onMouseLeave={scheduleHealthHide}>
+                <div className="health-bar" role="img" aria-label="Health distribution">
+                  {buckets.healthy.length > 0 && (
+                    <button
+                      type="button"
+                      className="health-seg health-seg-healthy"
+                      style={{ flex: buckets.healthy.length }}
+                      onMouseEnter={() => showHealth("healthy")}
+                      onClick={() => setHealthGroup(healthGroup === "healthy" ? null : "healthy")}
+                      title={`${buckets.healthy.length} healthy`}
+                    />
+                  )}
+                  {buckets.attention.length > 0 && (
+                    <button
+                      type="button"
+                      className="health-seg health-seg-attention"
+                      style={{ flex: buckets.attention.length }}
+                      onMouseEnter={() => showHealth("attention")}
+                      onClick={() => setHealthGroup(healthGroup === "attention" ? null : "attention")}
+                      title={`${buckets.attention.length} due soon`}
+                    />
+                  )}
+                  {buckets.overdue.length > 0 && (
+                    <button
+                      type="button"
+                      className="health-seg health-seg-overdue"
+                      style={{ flex: buckets.overdue.length }}
+                      onMouseEnter={() => showHealth("overdue")}
+                      onClick={() => setHealthGroup(healthGroup === "overdue" ? null : "overdue")}
+                      title={`${buckets.overdue.length} overdue`}
+                    />
+                  )}
+                </div>
+                {healthGroup && (
+                  <HealthPopover
+                    group={healthGroup}
+                    friends={buckets[healthGroup]}
+                    onClose={() => setHealthGroup(null)}
+                    onMouseEnter={cancelHealthHide}
+                    onMouseLeave={scheduleHealthHide}
+                    onOpenFriend={(id) => { goToFriend(id); setHealthGroup(null); }}
+                  />
+                )}
+              </div>
+              <div className="health-legend">
+                {(["healthy", "attention", "overdue"] as const).filter((g) => buckets[g].length > 0).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`health-leg health-leg-btn${healthGroup === g ? " is-active" : ""}`}
+                    style={{ flex: buckets[g].length }}
+                    onClick={() => setHealthGroup(healthGroup === g ? null : g)}
+                  >
+                    <span className={`dot dot-${g}`} />
+                    {buckets[g].length} {g === "attention" ? "soon" : g}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <div className="section-label">By category</div>
+              <ul className="cat-list">
+                {categories.map(([name, count]) => {
+                  const isOpen = openCat === name;
+                  const catFriends = friends.filter((f) => f.category === name);
+                  return (
+                    <li key={name} className={`cat-row${isOpen ? " is-open" : ""}`}>
+                      <button
+                        type="button"
+                        className="cat-row-btn"
+                        onClick={() => setOpenCat(isOpen ? null : name)}
+                        aria-expanded={isOpen}
+                      >
+                        <span className="cat-chev" aria-hidden="true">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+                        </span>
+                        <span className="cat-name" style={{ textTransform: "capitalize" }}>{name}</span>
+                        <span className="cat-bar">
+                          <span className="cat-bar-fill" style={{ width: `${(count / total) * 100}%`, background: catColor(name) }} />
+                        </span>
+                        <span className="cat-count">{count}</span>
+                      </button>
+                      {isOpen && (
+                        <div className="cat-drop">
+                          <ul className="cat-drop-list">
+                            {catFriends.map((f) => {
+                              const st = statusFor(f);
+                              const td = lastTextedDays(f);
+                              const hd = lastHungDays(f);
+                              return (
+                                <li key={f.id}>
+                                  <button className="cat-drop-item" onClick={() => goToFriend(f.id)}>
+                                    <FriendAvatar friend={f} size="sm" />
+                                    <span className="cat-drop-body">
+                                      <span className="cat-drop-name">{f.name}</span>
+                                      <span className={`cat-drop-status fp-status-${st}`}>
+                                        {st === "healthy" ? "in rhythm"
+                                          : st === "attention" ? `due ~${Math.max(0, f.textFrequencyDays - (td === Infinity ? 0 : td))}d`
+                                          : `${Math.max(0, (td === Infinity ? 0 : td) - f.textFrequencyDays)}d overdue`}
+                                      </span>
+                                    </span>
+                                    <span className="cat-drop-arr">→</span>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          </div>
+
         </div>
-      </main>
+      </div>
+
+      {/* ─── Day cell modal ─── */}
+      <Modal
+        open={!!selectedCell}
+        title={selectedCell ? selectedCell.date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : ""}
+        onClose={() => setSelectedCell(null)}
+      >
+        {selectedCell && (
+          <ul className="cell-moments">
+            {selectedCell.moments.map((m, i) => (
+              <li
+                key={i}
+                className="cell-moment"
+                onClick={() => { goToFriend(m.friend.id); setSelectedCell(null); }}
+              >
+                <FriendAvatar friend={m.friend} size="sm" />
+                <span className="cell-moment-body">
+                  <span style={{ fontSize: 13 }}>
+                    <span className="cell-moment-who">{m.friend.name}</span>
+                    <span className="cell-moment-kind"> · {kindWord(m.interaction.type).toLowerCase()}</span>
+                  </span>
+                  {m.interaction.notes && <span className="cell-moment-note">{m.interaction.notes}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Modal>
+
+      {/* ─── Monthly report modal ─── */}
+      <Modal
+        open={reportOpen}
+        title=""
+        onClose={() => setReportOpen(false)}
+        size="lg"
+      >
+        <MonthReportContent
+          report={report}
+          friends={friends}
+          aiReport={monthlyReport}
+          onOpenFriend={(id) => { goToFriend(id); setReportOpen(false); }}
+        />
+      </Modal>
     </div>
   );
 }

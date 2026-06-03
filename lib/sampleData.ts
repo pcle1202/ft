@@ -323,7 +323,7 @@ function createSampleFriends(): Friend[] {
 const STORAGE_KEY = (userId: string) => `friendkeeper-friends-${userId}`;
 const SAMPLE_FLAG = (userId: string) => `friendkeeper-sample-${userId}`;
 const SAMPLE_VERSION_KEY = (userId: string) => `friendkeeper-sample-version-${userId}`;
-const SAMPLE_VERSION = "v3";
+const SAMPLE_VERSION = "v4";
 
 export function hasSampleData(userId: string): boolean {
   if (typeof window === "undefined") return false;

@@ -9,86 +9,39 @@ export default function AppNav() {
   const { isSignedIn } = useUser();
 
   return (
-    <header
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto 1fr",
-        alignItems: "center",
-        padding: "10px 20px",
-        borderBottom: "1px solid #E0D9CE",
-        background: "transparent",
-        position: "relative",
-        zIndex: 10,
-      }}
-    >
+    <header className="topnav">
       {/* Left: Brand */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span
-          style={{
-            color: "#A68B50",
-            fontSize: 18,
-            transform: "rotate(-15deg)",
-            display: "inline-block",
-            lineHeight: 1,
-          }}
-        >
-          ✦
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 21s-7-4.5-9-9.5C1.5 7 4.5 4 8 4c1.7 0 3.2.8 4 2 .8-1.2 2.3-2 4-2 3.5 0 6.5 3 5 7.5-2 5-9 9.5-9 9.5z"/>
+          </svg>
         </span>
-        <span
-          style={{
-            fontFamily: "var(--font-lora)",
-            fontSize: 17,
-            color: "#2E2A24",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          friendkeeper
-        </span>
+        <div className="brand-name">friendkeeper</div>
       </div>
 
       {/* Center: Nav links */}
-      <nav style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <nav className="topnav-links">
         <Link
           href="/dashboard"
-          className={pathname === "/dashboard" ? "nav-link-active" : ""}
-          style={{
-            fontFamily: "var(--font-lora)",
-            fontSize: 15,
-            color: pathname === "/dashboard" ? "#2E2A24" : "#9A8F82",
-            textDecoration: "none",
-            paddingBottom: 4,
-          }}
+          className={"navlink " + (pathname === "/dashboard" ? "is-on" : "")}
         >
           Dashboard
         </Link>
         <Link
           href="/"
-          className={pathname === "/" ? "nav-link-active" : ""}
-          style={{
-            fontFamily: "var(--font-lora)",
-            fontSize: 15,
-            color: pathname === "/" ? "#2E2A24" : "#9A8F82",
-            textDecoration: "none",
-            paddingBottom: 4,
-          }}
+          className={"navlink " + (pathname === "/" ? "is-on" : "")}
         >
           Friends
         </Link>
       </nav>
 
       {/* Right: User */}
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+      <div className="topnav-right">
         {isSignedIn ? (
           <UserButton />
         ) : (
-          <Link
-            href="/sign-in"
-            style={{
-              fontSize: 12,
-              color: "#9A8F82",
-              textDecoration: "none",
-            }}
-          >
+          <Link href="/sign-in" className="navlink" style={{ fontSize: 13 }}>
             Sign in
           </Link>
         )}

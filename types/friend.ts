@@ -21,10 +21,11 @@ export type Friend = {
   birthday?: string;
   metAt?: string;
   color?: string;
+  photoUrl?: string;
   nextTopics?: string[];
 };
 
-export type InteractionType = "text" | "hangout";
+export type InteractionType = "text" | "hangout" | "note";
 
 export type Interaction = {
   id: string;
