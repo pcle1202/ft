@@ -12,7 +12,7 @@ function ago(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString();
 }
 
-function createSampleFriends(): Friend[] {
+export function createSampleFriends(): Friend[] {
   return [
     {
       id: SAMPLE_IDS[0],

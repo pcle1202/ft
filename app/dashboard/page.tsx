@@ -628,8 +628,7 @@ export default function Dashboard() {
     const uid = isSignedIn ? user!.id : "guest";
     setIsGuest(!isSignedIn && guestMode);
     setUserId(uid);
-    setFriends(getFriends(uid));
-    setReady(true);
+    getFriends(uid).then((f) => { setFriends(f); setReady(true); }).catch(() => setReady(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Friend, FriendCategory } from "@/types/friend";
 
 type FriendFormProps = {
@@ -33,8 +33,13 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 4,
 };
 
-function FieldLabel({ children }: { children: string }) {
-  return <span style={labelStyle}>{children}</span>;
+function FieldLabel({ children, required }: { children: string; required?: boolean }) {
+  return (
+    <span style={labelStyle}>
+      {children}
+      {required && <span style={{ color: "#C46060", marginLeft: 2 }}>*</span>}
+    </span>
+  );
 }
 
 function Field({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -45,33 +50,56 @@ function Field({ children, style }: { children: React.ReactNode; style?: React.C
   );
 }
 
-function InputWithFocus({
-  style,
-  ...props
-}: React.InputHTMLAttributes<HTMLInputElement>) {
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <span style={{ color: "#C46060", fontSize: 11, marginTop: 3 }}>{msg}</span>;
+}
+
+const InputWithFocus = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(function InputWithFocus({ style, onFocus, onBlur, ...props }, ref) {
   const [focused, setFocused] = useState(false);
   return (
     <input
+      ref={ref}
+      {...props}
+      style={{ ...inputStyle, borderBottomColor: focused ? "#A68B50" : "#E0D9CE", ...style }}
+      onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e); }}
+    />
+  );
+});
+InputWithFocus.displayName = "InputWithFocus";
+
+const SelectWithFocus = React.forwardRef<
+  HTMLSelectElement,
+  React.SelectHTMLAttributes<HTMLSelectElement>
+>(function SelectWithFocus({ style, onFocus, onBlur, ...props }, ref) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <select
+      ref={ref}
       {...props}
       style={{
         ...inputStyle,
+        fontFamily: "var(--font-lora)",
+        appearance: "none" as const,
+        WebkitAppearance: "none" as const,
         borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
         ...style,
       }}
-      onFocus={(e) => {
-        setFocused(true);
-        props.onFocus?.(e);
-      }}
-      onBlur={(e) => {
-        setFocused(false);
-        props.onBlur?.(e);
-      }}
+      onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e); }}
     />
   );
-}
+});
+SelectWithFocus.displayName = "SelectWithFocus";
 
 function TextareaWithFocus({
   style,
+  onFocus,
+  onBlur,
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const [focused, setFocused] = useState(false);
@@ -84,42 +112,8 @@ function TextareaWithFocus({
         borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
         ...style,
       }}
-      onFocus={(e) => {
-        setFocused(true);
-        props.onFocus?.(e);
-      }}
-      onBlur={(e) => {
-        setFocused(false);
-        props.onBlur?.(e);
-      }}
-    />
-  );
-}
-
-function SelectWithFocus({
-  style,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <select
-      {...props}
-      style={{
-        ...inputStyle,
-        fontFamily: "var(--font-lora)",
-        appearance: "none" as const,
-        WebkitAppearance: "none" as const,
-        borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
-        ...style,
-      }}
-      onFocus={(e) => {
-        setFocused(true);
-        props.onFocus?.(e);
-      }}
-      onBlur={(e) => {
-        setFocused(false);
-        props.onBlur?.(e);
-      }}
+      onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e); }}
     />
   );
 }
@@ -128,6 +122,8 @@ function isoToDateInput(value?: string) {
   if (!value) return "";
   return value.slice(0, 10);
 }
+
+type FormErrors = { name?: string; category?: string; textFrequency?: string };
 
 export default function FriendForm({
   onAddFriend,
@@ -140,13 +136,24 @@ export default function FriendForm({
 
   const [name, setName] = useState(initial?.name ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [category, setCategory] = useState<FriendCategory>(initial?.category ?? "close friend");
+  const [category, setCategory] = useState<FriendCategory | "">(initial?.category ?? "");
   const [photoUrl, setPhotoUrl] = useState(initial?.photoUrl ?? "");
+  const [sizeWarning, setSizeWarning] = useState(false);
   const [livesIn, setLivesIn] = useState(initial?.livesIn ?? "");
   const [birthday, setBirthday] = useState(initial?.birthday ?? "");
   const [metAt, setMetAt] = useState(initial?.metAt ?? "");
   const [lastTexted, setLastTexted] = useState(isoToDateInput(initial?.lastTexted));
   const [lastHungOut, setLastHungOut] = useState(isoToDateInput(initial?.lastHungOut));
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const categoryRef = useRef<HTMLSelectElement>(null);
+  const textAmountRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function clearError(field: keyof FormErrors) {
+    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  }
 
   // Frequency
   function daysToAmountAndUnit(days: number) {
@@ -162,12 +169,33 @@ export default function FriendForm({
   const [hangoutAmount, setHangoutAmount] = useState(initHangout.amount);
   const [hangoutUnit, setHangoutUnit] = useState<"days" | "months">(initHangout.unit);
 
+  const initials = name.trim()
+    ? name.trim().split(" ").map((p) => p[0]).slice(0, 2).join("")
+    : "?";
+  const avatarColor = initial?.color ?? "#7A5A3F";
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSizeWarning(file.size > 2 * 1024 * 1024);
+    const reader = new FileReader();
+    reader.onload = () => setPhotoUrl(reader.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function removePhoto() {
+    setPhotoUrl("");
+    setSizeWarning(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   function buildFriend(): Friend {
     return {
       id: initial?.id ?? crypto.randomUUID(),
-      name,
+      name: name.trim(),
       notes: notes.trim() || undefined,
-      category,
+      category: category as FriendCategory,
       livesIn: livesIn.trim() || undefined,
       birthday: birthday.trim() || undefined,
       metAt: metAt.trim() || undefined,
@@ -184,8 +212,21 @@ export default function FriendForm({
     };
   }
 
+  function validate(): boolean {
+    const next: FormErrors = {};
+    if (!name.trim()) next.name = "This field is required";
+    if (!category) next.category = "This field is required";
+    if (!textAmount || textAmount <= 0) next.textFrequency = "This field is required";
+    setErrors(next);
+    if (next.name) { nameRef.current?.focus(); return false; }
+    if (next.category) { categoryRef.current?.focus(); return false; }
+    if (next.textFrequency) { textAmountRef.current?.focus(); return false; }
+    return true;
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!validate()) return;
     const friend = buildFriend();
     if (isEdit && onUpdate) {
       onUpdate(friend);
@@ -225,89 +266,106 @@ export default function FriendForm({
     color: "#6B6259",
   };
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhotoUrl(reader.result as string);
-    reader.readAsDataURL(file);
-  }
-
-  const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("") || "?";
-  const avatarColor = initial?.color ?? "#7A5A3F";
-
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Photo upload — avatar only, click to change */}
-      <label style={{ cursor: "pointer", display: "inline-block", alignSelf: "flex-start" }} title={photoUrl ? "Click to change photo" : "Click to add a photo"}>
+    <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+      {/* ── Photo section ── */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingBottom: 4 }}>
         <div style={{
-          width: 52, height: 52, borderRadius: 999,
+          width: 72, height: 72, borderRadius: 999,
           background: photoUrl ? "transparent" : avatarColor,
-          overflow: "hidden", display: "grid", placeItems: "center",
+          overflow: "hidden", display: "grid", placeItems: "center", flexShrink: 0,
           boxShadow: "0 1px 0 rgba(50,30,10,0.12), inset 0 -2px 0 rgba(0,0,0,0.08)",
-          position: "relative",
         }}>
           {photoUrl ? (
             <img src={photoUrl} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
-            <span style={{ color: "#FFFBF1", fontFamily: "var(--serif)", fontSize: 20, fontWeight: 400 }}>{initials}</span>
+            <span style={{ color: "#FFFBF1", fontFamily: "var(--serif)", fontSize: 26, fontWeight: 400, userSelect: "none" }}>
+              {initials}
+            </span>
           )}
-          <div style={{
-            position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: 0, transition: "opacity 0.15s",
-          }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "0")}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
-            </svg>
-          </div>
         </div>
-        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
-      </label>
 
-      {/* Top actions */}
+        {photoUrl ? (
+          <button
+            type="button"
+            onClick={removePhoto}
+            style={{ background: "transparent", border: 0, color: "#9A8F82", fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 2 }}
+          >
+            Remove
+          </button>
+        ) : (
+          <label style={{ cursor: "pointer" }}>
+            <span style={{
+              border: "1px dashed #C4BAB0",
+              background: "transparent",
+              color: "#9A8F82",
+              fontSize: 11,
+              padding: "4px 10px",
+              borderRadius: 999,
+              display: "inline-block",
+              cursor: "pointer",
+            }}>
+              Add photo
+            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handlePhotoChange}
+            />
+          </label>
+        )}
+
+        {sizeWarning && (
+          <p style={{ color: "#D4A855", fontSize: 11, margin: 0, textAlign: "center", maxWidth: 220, lineHeight: 1.5 }}>
+            This image is large and may slow the app. Consider using a smaller photo.
+          </p>
+        )}
+      </div>
+
+      {/* ── Top actions ── */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingBottom: 4 }}>
         {onCancel && (
-          <button type="button" onClick={onCancel} style={btnGhostStyle}>
-            Cancel
-          </button>
+          <button type="button" onClick={onCancel} style={btnGhostStyle}>Cancel</button>
         )}
         <button type="submit" style={btnPrimStyle}>
           {isEdit ? "Save changes" : "Add to my circle"}
         </button>
       </div>
 
-      {/* Row 1: Name + Category */}
+      {/* ── Row 1: Name + Category ── */}
       <div style={{ display: "flex", gap: 12 }}>
         <Field style={{ flex: 1 }}>
-          <FieldLabel>Name</FieldLabel>
+          <FieldLabel required>Name</FieldLabel>
           <InputWithFocus
+            ref={nameRef}
             placeholder="Their name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
+            onChange={(e) => { setName(e.target.value); clearError("name"); }}
           />
+          <FieldError msg={errors.name} />
         </Field>
         <Field style={{ width: 140 }}>
-          <FieldLabel>Category</FieldLabel>
+          <FieldLabel required>Category</FieldLabel>
           <SelectWithFocus
+            ref={categoryRef}
             value={category}
-            onChange={(e) => setCategory(e.target.value as FriendCategory)}
+            onChange={(e) => { setCategory(e.target.value as FriendCategory | ""); clearError("category"); }}
           >
+            {!isEdit && <option value="">Select…</option>}
             <option value="close friend">Close friend</option>
             <option value="family">Family</option>
             <option value="classmate">Classmate</option>
             <option value="coworker">Coworker</option>
             <option value="other">Other</option>
           </SelectWithFocus>
+          <FieldError msg={errors.category} />
         </Field>
       </div>
 
-      {/* Row 2: Notes */}
+      {/* ── Row 2: Notes ── */}
       <Field>
         <FieldLabel>A note about them</FieldLabel>
         <TextareaWithFocus
@@ -318,7 +376,7 @@ export default function FriendForm({
         />
       </Field>
 
-      {/* Row 3: Lives in + Birthday */}
+      {/* ── Row 3: Lives in + Birthday ── */}
       <div style={{ display: "flex", gap: 12 }}>
         <Field style={{ flex: 1 }}>
           <FieldLabel>Lives in</FieldLabel>
@@ -338,7 +396,7 @@ export default function FriendForm({
         </Field>
       </div>
 
-      {/* Row 4: How you met */}
+      {/* ── Row 4: How you met ── */}
       <Field>
         <FieldLabel>How you met</FieldLabel>
         <InputWithFocus
@@ -348,19 +406,20 @@ export default function FriendForm({
         />
       </Field>
 
-      {/* Divider */}
+      {/* ── Divider ── */}
       <div style={dividerLabelStyle}>Stay in touch</div>
 
-      {/* Row 5: Frequency */}
+      {/* ── Row 5: Frequency ── */}
       <div style={{ display: "flex", gap: 16 }}>
         <Field style={{ flex: 1 }}>
-          <FieldLabel>Text every</FieldLabel>
+          <FieldLabel required>Text every</FieldLabel>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <InputWithFocus
+              ref={textAmountRef}
               type="number"
               min={1}
               value={textAmount}
-              onChange={(e) => setTextAmount(Number(e.target.value))}
+              onChange={(e) => { setTextAmount(Number(e.target.value)); clearError("textFrequency"); }}
               style={{ width: 60 }}
             />
             <SelectWithFocus
@@ -372,6 +431,7 @@ export default function FriendForm({
               <option value="months">months</option>
             </SelectWithFocus>
           </div>
+          <FieldError msg={errors.textFrequency} />
         </Field>
         <Field style={{ flex: 1 }}>
           <FieldLabel>Hang out every</FieldLabel>
@@ -395,7 +455,7 @@ export default function FriendForm({
         </Field>
       </div>
 
-      {/* Row 6: Dates (edit only) */}
+      {/* ── Row 6: Dates (edit only) ── */}
       {isEdit && (
         <div style={{ display: "flex", gap: 12 }}>
           <Field style={{ flex: 1 }}>
@@ -417,7 +477,7 @@ export default function FriendForm({
         </div>
       )}
 
-      {/* Remove friend */}
+      {/* ── Remove friend (edit only) ── */}
       {isEdit && onDelete && (
         <div style={{ paddingTop: 4 }}>
           <button

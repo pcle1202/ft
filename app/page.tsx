@@ -7,8 +7,8 @@ import { useRouter } from "next/navigation";
 import { Friend, FriendCategory } from "@/types/friend";
 import FriendCard from "@/components/FriendCard";
 import FriendForm from "@/components/FriendForm";
-import { getFriends, addFriend, updateFriend, deleteFriend } from "@/lib/storage";
-import { loadSampleData, clearSampleData, hasSampleData } from "@/lib/sampleData";
+import { getFriends, addFriend, updateFriend, deleteFriend, hasLocalData, getLocalFriends, clearLocalData } from "@/lib/storage";
+import { loadSampleData, clearSampleData, hasSampleData, createSampleFriends, SAMPLE_IDS } from "@/lib/sampleData";
 import AppNav from "@/components/AppNav";
 import { FriendAvatar } from "@/components/Avatar";
 
@@ -128,27 +128,52 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [sampleLoaded, setSampleLoaded] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showMigrationBanner, setShowMigrationBanner] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
     const guestMode = localStorage.getItem("friendkeeper-guest") === "1";
     if (!isSignedIn && !guestMode) { router.push("/sign-in"); return; }
     const uid = isSignedIn ? user!.id : "guest";
-    setIsGuest(!isSignedIn && guestMode);
+    const guest = !isSignedIn && guestMode;
+    // Clear stale guest flag when a real user is signed in
+    if (isSignedIn) localStorage.removeItem("friendkeeper-guest");
+    setIsGuest(guest);
     setUserId(uid);
-    let currentFriends = getFriends(uid);
-    if (hasSampleData(uid)) {
-      currentFriends = loadSampleData(uid, currentFriends);
-    }
-    setFriends(currentFriends);
-    setSampleLoaded(hasSampleData(uid));
-    if (currentFriends.length > 0) {
-      const saved = sessionStorage.getItem("friendkeeper-selected-friend");
-      const sorted = [...currentFriends].sort((a, b) => getUrgency(b) - getUrgency(a));
-      const initial = (saved && currentFriends.find((f) => f.id === saved)) ? saved : sorted[0].id;
-      setSelectedFriendId(initial);
-    }
-    setIsLoading(false);
+
+    (async () => {
+      try {
+        // Ensure DB tables exist (idempotent)
+        if (!guest) {
+          const initRes = await fetch("/api/db-init", { method: "POST" });
+          if (!initRes.ok) console.error("db-init failed:", await initRes.text());
+          // Show migration banner if user has local data not yet imported
+          if (hasLocalData(uid)) setShowMigrationBanner(true);
+        }
+
+        let currentFriends = await getFriends(uid);
+
+        // Guest: also handle sample data
+        if (guest && hasSampleData(uid)) {
+          currentFriends = loadSampleData(uid, currentFriends);
+        }
+
+        setFriends(currentFriends);
+        setSampleLoaded(hasSampleData(uid));
+        if (currentFriends.length > 0) {
+          const saved = sessionStorage.getItem("friendkeeper-selected-friend");
+          const sorted = [...currentFriends].sort((a, b) => getUrgency(b) - getUrgency(a));
+          const initial = (saved && currentFriends.find((f) => f.id === saved)) ? saved : sorted[0].id;
+          setSelectedFriendId(initial);
+        }
+      } catch (e) {
+        console.error("Failed to load friends:", e);
+        showToast("Could not load your data — check your connection", 6000);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn]);
 
@@ -156,33 +181,69 @@ export default function Home() {
     if (selectedFriendId) sessionStorage.setItem("friendkeeper-selected-friend", selectedFriendId);
   }, [selectedFriendId]);
 
-  function reload(uid: string) {
-    setFriends(getFriends(uid));
+  async function reload(uid: string) {
+    const updated = await getFriends(uid);
+    setFriends(updated);
     setSampleLoaded(hasSampleData(uid));
   }
 
-  function handleAddFriend(friend: Friend) {
+  async function handleAddFriend(friend: Friend) {
     if (!userId) return;
-    addFriend(friend, userId);
-    reload(userId);
-    setShowAddForm(false);
-    setSelectedFriendId(friend.id);
-  }
-
-  function handleUpdateFriend(friend: Friend) {
-    if (!userId) return;
-    updateFriend(friend, userId);
-    reload(userId);
-  }
-
-  function handleDeleteFriend(friendId: string) {
-    if (!userId) return;
-    deleteFriend(friendId, userId);
-    if (selectedFriendId === friendId) {
-      const remaining = getFriends(userId).filter((f) => f.id !== friendId);
-      setSelectedFriendId(remaining.length > 0 ? [...remaining].sort((a, b) => getUrgency(b) - getUrgency(a))[0].id : null);
+    try {
+      await addFriend(friend, userId);
+      await reload(userId);
+      setShowAddForm(false);
+      setSelectedFriendId(friend.id);
+    } catch (e) {
+      console.error("addFriend failed:", e);
+      showToast("Failed to save — please try again");
     }
-    reload(userId);
+  }
+
+  async function handleUpdateFriend(friend: Friend) {
+    if (!userId) return;
+    try {
+      await updateFriend(friend, userId);
+      await reload(userId);
+    } catch (e) {
+      console.error("updateFriend failed:", e);
+      showToast("Failed to save — please try again");
+    }
+  }
+
+  async function handleDeleteFriend(friendId: string) {
+    if (!userId) return;
+    try {
+      await deleteFriend(friendId, userId);
+      if (selectedFriendId === friendId) {
+        const remaining = (await getFriends(userId)).filter((f) => f.id !== friendId);
+        setSelectedFriendId(remaining.length > 0 ? [...remaining].sort((a, b) => getUrgency(b) - getUrgency(a))[0].id : null);
+      }
+      await reload(userId);
+    } catch (e) {
+      console.error("deleteFriend failed:", e);
+      showToast("Failed to delete — please try again");
+    }
+  }
+
+  async function handleMigrateData() {
+    if (!userId) return;
+    setMigrating(true);
+    try {
+      const localFriends = getLocalFriends(userId);
+      for (const friend of localFriends) {
+        await addFriend(friend, userId);
+      }
+      clearLocalData(userId);
+      setShowMigrationBanner(false);
+      const updated = await getFriends(userId);
+      setFriends(updated);
+      showToast("Your data has been saved to the cloud");
+    } catch {
+      showToast("Import failed — please try again");
+    } finally {
+      setMigrating(false);
+    }
   }
 
   function exitGuestMode() {
@@ -190,26 +251,52 @@ export default function Home() {
     router.push("/sign-in");
   }
 
-  function handleToggleSample() {
+  async function handleToggleSample() {
     if (!userId) return;
     if (sampleLoaded) {
-      const updated = clearSampleData(userId, friends);
-      setFriends(updated);
+      if (isGuest) {
+        const updated = clearSampleData(userId, friends);
+        setFriends(updated);
+        if (selectedFriendId && !updated.find((f) => f.id === selectedFriendId)) setSelectedFriendId(null);
+      } else {
+        // Delete sample friends from Neon
+        for (const id of SAMPLE_IDS) {
+          try { await deleteFriend(id, userId); } catch { /* already gone */ }
+        }
+        // Clear localStorage flags
+        clearSampleData(userId, friends.filter((f) => !SAMPLE_IDS.includes(f.id)));
+        const updated = friends.filter((f) => !SAMPLE_IDS.includes(f.id));
+        setFriends(updated);
+        if (selectedFriendId && SAMPLE_IDS.includes(selectedFriendId)) setSelectedFriendId(null);
+      }
       setSampleLoaded(false);
-      if (selectedFriendId && !updated.find((f) => f.id === selectedFriendId)) setSelectedFriendId(null);
       showToast("Sample data cleared");
     } else {
-      const updated = loadSampleData(userId, friends);
-      setFriends(updated);
+      if (isGuest) {
+        const updated = loadSampleData(userId, friends);
+        setFriends(updated);
+        if (updated.length > 0) setSelectedFriendId(updated[0].id);
+      } else {
+        // Save sample friends to Neon
+        const samples = createSampleFriends();
+        for (const friend of samples) {
+          try { await addFriend(friend, userId); } catch { /* already exists */ }
+        }
+        // Set localStorage flag so hasSampleData() returns true
+        loadSampleData(userId, []);
+        const updated = await getFriends(userId);
+        setFriends(updated);
+        const first = updated.find((f) => SAMPLE_IDS.includes(f.id));
+        if (first) setSelectedFriendId(first.id);
+      }
       setSampleLoaded(true);
-      if (updated.length > 0) setSelectedFriendId(updated[0].id);
       showToast("Sample data loaded");
     }
   }
 
-  function showToast(msg: string) {
+  function showToast(msg: string, durationMs = 4500) {
     setToast(msg);
-    setTimeout(() => setToast(null), 2800);
+    setTimeout(() => setToast(null), durationMs);
   }
 
   const filteredFriends = friends.filter((f) => {
@@ -235,6 +322,26 @@ export default function Home() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <a href="/sign-in" style={{ fontSize: 11.5, color: "var(--accent)", textDecoration: "underline" }}>Sign in</a>
             <button onClick={exitGuestMode} style={{ background: "transparent", border: 0, fontSize: 11.5, color: "var(--hint)", cursor: "pointer" }}>Exit guest</button>
+          </div>
+        </div>
+      )}
+      {showMigrationBanner && (
+        <div className="guest-banner">
+          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>You have local data from before. Import it to the cloud?</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <button
+              onClick={handleMigrateData}
+              disabled={migrating}
+              style={{ fontSize: 11.5, color: "var(--accent)", background: "transparent", border: 0, cursor: "pointer", fontWeight: 500 }}
+            >
+              {migrating ? "Importing…" : "Import your data"}
+            </button>
+            <button
+              onClick={() => { setShowMigrationBanner(false); clearLocalData(userId!); }}
+              style={{ fontSize: 11.5, color: "var(--hint)", background: "transparent", border: 0, cursor: "pointer" }}
+            >
+              Dismiss
+            </button>
           </div>
         </div>
       )}
