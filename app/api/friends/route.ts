@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
         ${friend.lastTexted ?? null}, ${friend.lastHungOut ?? null},
         ${friend.createdAt}
       )
+      ON CONFLICT (id) DO NOTHING
     `;
 
     // Insert interactions if any (bulk import case)

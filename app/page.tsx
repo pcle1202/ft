@@ -128,8 +128,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [sampleLoaded, setSampleLoaded] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [showMigrationBanner, setShowMigrationBanner] = useState(false);
-  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -148,8 +146,14 @@ export default function Home() {
         if (!guest) {
           const initRes = await fetch("/api/db-init", { method: "POST" });
           if (!initRes.ok) console.error("db-init failed:", await initRes.text());
-          // Show migration banner if user has local data not yet imported
-          if (hasLocalData(uid)) setShowMigrationBanner(true);
+          // Silently migrate any guest/local data into the signed-in account
+          if (hasLocalData(uid)) {
+            const localFriends = getLocalFriends(uid);
+            for (const friend of localFriends) {
+              await addFriend(friend, uid);
+            }
+            clearLocalData(uid);
+          }
         }
 
         let currentFriends = await getFriends(uid);
@@ -223,26 +227,6 @@ export default function Home() {
     } catch (e) {
       console.error("deleteFriend failed:", e);
       showToast("Failed to delete — please try again");
-    }
-  }
-
-  async function handleMigrateData() {
-    if (!userId) return;
-    setMigrating(true);
-    try {
-      const localFriends = getLocalFriends(userId);
-      for (const friend of localFriends) {
-        await addFriend(friend, userId);
-      }
-      clearLocalData(userId);
-      setShowMigrationBanner(false);
-      const updated = await getFriends(userId);
-      setFriends(updated);
-      showToast("Your data has been saved to the cloud");
-    } catch {
-      showToast("Import failed — please try again");
-    } finally {
-      setMigrating(false);
     }
   }
 
@@ -325,27 +309,6 @@ export default function Home() {
           </div>
         </div>
       )}
-      {showMigrationBanner && (
-        <div className="guest-banner">
-          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>You have local data from before. Import it to the cloud?</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            <button
-              onClick={handleMigrateData}
-              disabled={migrating}
-              style={{ fontSize: 11.5, color: "var(--accent)", background: "transparent", border: 0, cursor: "pointer", fontWeight: 500 }}
-            >
-              {migrating ? "Importing…" : "Import your data"}
-            </button>
-            <button
-              onClick={() => { setShowMigrationBanner(false); clearLocalData(userId!); }}
-              style={{ fontSize: 11.5, color: "var(--hint)", background: "transparent", border: 0, cursor: "pointer" }}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
       <AppNav />
 
       <div className="friends-page" style={{ flex: 1, minHeight: 0 }}>
