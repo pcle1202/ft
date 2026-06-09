@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(topics)) return NextResponse.json({ topics: [] });
     const cleaned = topics.filter((t): t is string => typeof t === "string").slice(0, 5);
     return NextResponse.json({ topics: cleaned });
-  } catch {
+  } catch (err) {
+    console.error("AI /topics error:", err);
     return NextResponse.json({ topics: [] });
   }
 }

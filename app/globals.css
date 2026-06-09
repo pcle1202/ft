@@ -1045,7 +1045,7 @@ body::before {
   max-width: 480px;
 }
 
-/* Rhythm */
+/* Check-in goals */
 .rhythm { display: flex; flex-direction: column; gap: 14px; }
 .rhythm-row { display: flex; flex-direction: column; gap: 4px; }
 .rhythm-top, .rhythm-bot { display: flex; justify-content: space-between; align-items: baseline; }

@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
     const mood = response.trim().toLowerCase().replace(/[^a-z]/g, "");
     const valid = VALID_MOODS.find((m) => mood.includes(m));
     return NextResponse.json({ mood: valid ?? null });
-  } catch {
+  } catch (err) {
+    console.error("AI /mood error:", err);
     return NextResponse.json({ mood: null });
   }
 }

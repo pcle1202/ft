@@ -462,7 +462,7 @@ export default function FriendCard({ friend, onUpdateFriend, onDeleteFriend }: F
 
         <hr className="rule" />
 
-        {/* ─── Rhythm + Ask about ─── */}
+        {/* ─── Check-in goals + Ask about ─── */}
         <div className="d-cols" style={{ gridTemplateColumns: "1.2fr 1fr" }}>
           <section>
             <div className="section-label">Check-in goals</div>

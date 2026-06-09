@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(parsed)) return NextResponse.json({ suggestions: [] });
     const suggestions = parsed.filter((s): s is string => typeof s === "string").slice(0, 3);
     return NextResponse.json({ suggestions });
-  } catch {
+  } catch (err) {
+    console.error("AI /suggest error:", err);
     return NextResponse.json({ suggestions: [] });
   }
 }

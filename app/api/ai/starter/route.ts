@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
 
     const starter = await generateAIResponse(prompt);
     return NextResponse.json({ starter: starter.trim() });
-  } catch {
+  } catch (err) {
+    console.error("AI /starter error:", err);
     return NextResponse.json({ starter: null });
   }
 }

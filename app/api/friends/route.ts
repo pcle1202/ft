@@ -66,11 +66,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
-    console.log("[POST /api/friends] userId:", userId);
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const friend: Friend = await req.json();
-    console.log("[POST /api/friends] inserting friend:", friend.id, friend.name);
 
     await sql`
       INSERT INTO friends (

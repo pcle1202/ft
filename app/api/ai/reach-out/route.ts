@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
         try {
           const reason = await generateAIResponse(prompt);
           return { name: f.name, reason: reason.trim() };
-        } catch {
+        } catch (err) {
+          console.error("AI /reach-out per-friend error:", err);
           return {
             name: f.name,
             reason: `It's been a while since you connected with ${f.name}.`,
@@ -42,7 +43,8 @@ export async function POST(request: NextRequest) {
     );
 
     return NextResponse.json({ reasons });
-  } catch {
+  } catch (err) {
+    console.error("AI /reach-out error:", err);
     return NextResponse.json({ reasons: [] });
   }
 }

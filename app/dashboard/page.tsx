@@ -237,9 +237,9 @@ function HealthPopover({
 
   const title = group === "healthy" ? "Active" : group === "attention" ? "Quiet" : "Distant";
   const subtitle =
-    group === "healthy" ? "Friends you're seeing on cadence."
+    group === "healthy" ? "Friends you're keeping up with."
     : group === "attention" ? "About time for a check-in."
-    : "Past your usual rhythm — worth reaching out.";
+    : "Past their check-in goals — worth reaching out.";
 
   return (
     <div
@@ -273,7 +273,7 @@ function HealthPopover({
                 ? `${Math.max(td === Infinity ? 0 : td - f.textFrequencyDays, hd === Infinity ? 0 : hd - f.hangoutFrequencyDays)}d behind`
                 : group === "attention"
                 ? `due ~${Math.max(0, f.textFrequencyDays - (td === Infinity ? 0 : td))}d`
-                : "on cadence";
+                : "on track";
             return (
               <li key={f.id}>
                 <button className="health-pop-item" onClick={() => onOpenFriend(f.id)}>
@@ -624,7 +624,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isLoaded) return;
     const guestMode = localStorage.getItem("friendkeeper-guest") === "1";
-    if (!isSignedIn && !guestMode) { router.push("/sign-in"); return; }
+    if (!isSignedIn && !guestMode) { localStorage.setItem("friendkeeper-guest", "1"); }
     const uid = isSignedIn ? user!.id : "guest";
     setIsGuest(!isSignedIn && guestMode);
     setUserId(uid);
@@ -759,7 +759,7 @@ export default function Dashboard() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg)", position: "relative", zIndex: 1 }}>
       {isGuest && (
         <div className="guest-banner">
-          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>You&apos;re using guest mode. Sign in to keep your data.</p>
+          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>Sign in to sync your friends across devices.</p>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <a href="/sign-in" style={{ fontSize: 11.5, color: "var(--accent)", textDecoration: "underline" }}>Sign in</a>
             <button onClick={exitGuestMode} style={{ background: "transparent", border: 0, fontSize: 11.5, color: "var(--hint)", cursor: "pointer" }}>Exit guest</button>

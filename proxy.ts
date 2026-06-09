@@ -1,13 +1,8 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 
-const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)", "/", "/dashboard(.*)"]);
-
-
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublic(request)) {
-    await auth.protect();
-  }
-});
+// All routes are public by default. Individual API routes enforce auth
+// via auth() from @clerk/nextjs/server when they need it.
+export default clerkMiddleware();
 
 export const config = {
   matcher: [

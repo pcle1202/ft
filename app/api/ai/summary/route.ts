@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
 
     const summary = await generateAIResponse(prompt);
     return NextResponse.json({ summary: summary.trim() });
-  } catch {
+  } catch (err) {
+    console.error("AI /summary error:", err);
     return NextResponse.json({ summary: null });
   }
 }

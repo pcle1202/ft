@@ -132,7 +132,7 @@ export default function Home() {
   useEffect(() => {
     if (!isLoaded) return;
     const guestMode = localStorage.getItem("friendkeeper-guest") === "1";
-    if (!isSignedIn && !guestMode) { router.push("/sign-in"); return; }
+    if (!isSignedIn && !guestMode) { localStorage.setItem("friendkeeper-guest", "1"); }
     const uid = isSignedIn ? user!.id : "guest";
     const guest = !isSignedIn && guestMode;
     // Clear stale guest flag when a real user is signed in
@@ -149,10 +149,13 @@ export default function Home() {
           // Silently migrate any guest/local data into the signed-in account
           if (hasLocalData(uid)) {
             const localFriends = getLocalFriends(uid);
-            for (const friend of localFriends) {
-              await addFriend(friend, uid);
+            try {
+              for (const friend of localFriends) {
+                await addFriend(friend, uid);
+              }
+            } finally {
+              clearLocalData(uid);
             }
-            clearLocalData(uid);
           }
         }
 
@@ -302,7 +305,7 @@ export default function Home() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg)", position: "relative", zIndex: 1 }}>
       {isGuest && (
         <div className="guest-banner">
-          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>You&apos;re using guest mode. Sign in to keep your data.</p>
+          <p style={{ fontSize: 11.5, color: "var(--hint)", margin: 0 }}>Sign in to sync your friends across devices.</p>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <a href="/sign-in" style={{ fontSize: 11.5, color: "var(--accent)", textDecoration: "underline" }}>Sign in</a>
             <button onClick={exitGuestMode} style={{ background: "transparent", border: 0, fontSize: 11.5, color: "var(--hint)", cursor: "pointer" }}>Exit guest</button>

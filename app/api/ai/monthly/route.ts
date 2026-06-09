@@ -40,7 +40,8 @@ Friend interactions:\n${lines}\n\nMention specific friends by name. Note who got
 
     const report = await generateAIResponse(prompt);
     return NextResponse.json({ report: report.trim() });
-  } catch {
+  } catch (err) {
+    console.error("AI /monthly error:", err);
     return NextResponse.json({ report: null });
   }
 }
