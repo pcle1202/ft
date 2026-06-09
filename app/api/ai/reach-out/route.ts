@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
             : `last contact ${f.daysSince} days ago`;
         const overdueInfo =
           f.overdueBy > 0
-            ? `, ${f.overdueBy} days overdue (frequency goal: every ${f.frequencyDays} days)`
+            ? `, ${f.overdueBy} days behind their contact goal (goal: every ${f.frequencyDays} days)`
             : `, within frequency goal of every ${f.frequencyDays} days`;
         const data = `${f.name} (${f.category}): ${contactInfo}${overdueInfo}, health score ${f.healthScore}/100`;
 

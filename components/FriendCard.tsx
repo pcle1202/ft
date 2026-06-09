@@ -113,7 +113,7 @@ function RhythmRow({ label, cadenceDays, lastDays, overdue }: {
       <div className="rhythm-bot">
         <span className="rhythm-last">last {daysAgoLabel(lastDays)}</span>
         {overdue && lastDays !== Infinity && (
-          <span style={{ color: "#C46060", fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", opacity: 0.8 }}>
+          <span style={{ color: "#C46060", fontFamily: "var(--sans)", fontSize: 11, fontWeight: 400 }}>
             {lastDays - cadenceDays}d past
           </span>
         )}
@@ -417,70 +417,72 @@ export default function FriendCard({ friend, onUpdateFriend, onDeleteFriend }: F
     <>
       <div className="d">
         {/* ─── Header ─── */}
-        <header className="d-head">
-          <FriendAvatar friend={friend} size="lg" />
+        <header className="d-head" style={{ position: "relative" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <FriendAvatar friend={friend} size="lg" />
+            <span className={`d-status d-status-${st}`}>
+              <span className={`dot dot-${st}`} />
+              {st === "overdue" ? "distant" : st === "attention" ? "quiet" : "active"}
+            </span>
+          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="d-name-row">
               <h1 className="d-name">{friend.name}</h1>
-              <span className={`d-status d-status-${st}`}>
-                <span className={`dot dot-${st}`} />
-                {st === "overdue" ? "overdue" : st === "attention" ? "needs attention" : "healthy"}
-              </span>
-              <button
-                className="text-link"
-                onClick={() => setShowEditModal(true)}
-                style={{ fontSize: 12, marginLeft: 4, flexShrink: 0 }}
-              >
-                Edit
-              </button>
+              <span style={{ fontSize: 14, color: "#9A8F82", textTransform: "capitalize", fontFamily: "var(--sans)", fontWeight: 400 }}>· {friend.category}</span>
             </div>
             <div className="d-meta">
-              <span style={{ textTransform: "capitalize" }}>{friend.category}</span>
-              {friend.livesIn && <><span className="d-meta-sep">·</span><span>{friend.livesIn}</span></>}
-              {friend.metAt && <><span className="d-meta-sep">·</span><span>met {friend.metAt.toLowerCase()}</span></>}
+              {friend.birthday && (
+                <><span style={{ color: "#9A8F82", fontSize: 12 }}>Birthday:</span><span style={{ color: "#2E2A24", fontSize: 13, fontWeight: 500 }}>{friend.birthday}</span></>
+              )}
+              {friend.birthday && friend.livesIn && <span className="d-meta-sep">·</span>}
+              {friend.livesIn && (
+                <><span style={{ color: "#9A8F82", fontSize: 12 }}>Lives in:</span><span style={{ color: "#2E2A24", fontSize: 13, fontWeight: 500 }}>{friend.livesIn}</span></>
+              )}
+              {(friend.birthday || friend.livesIn) && friend.metAt && <span className="d-meta-sep">·</span>}
+              {friend.metAt && (
+                <><span style={{ color: "#9A8F82", fontSize: 12 }}>Met:</span><span style={{ color: "#2E2A24", fontSize: 13, fontWeight: 500 }}>{friend.metAt}</span></>
+              )}
             </div>
             {(friend.notes || friend.bio) && (
               <p className="d-bio">{friend.notes ?? friend.bio}</p>
             )}
           </div>
+          <button
+            onClick={() => setShowEditModal(true)}
+            style={{ position: "absolute", top: 0, right: 0, background: "transparent", border: 0, padding: 0, fontFamily: "var(--sans)", fontSize: 11.5, fontWeight: 500, color: "var(--muted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--ink)"; e.currentTarget.style.textDecoration = "underline"; e.currentTarget.style.textUnderlineOffset = "2px"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.textDecoration = "none"; }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+            </svg>
+            Edit
+          </button>
         </header>
 
         <hr className="rule" />
 
-        {/* ─── Check-in goals ─── */}
-        <section>
-          <div className="section-label">Check-in goals</div>
-          <div className="rhythm">
-            <RhythmRow label="Text" cadenceDays={friend.textFrequencyDays} lastDays={textLastDays} overdue={textOverdue} />
-            <RhythmRow label="Hang out" cadenceDays={friend.hangoutFrequencyDays} lastDays={hangoutLastDays} overdue={hangoutOverdue} />
-          </div>
-          <div className="d-actions">
-            <button className="btn-prim" onClick={() => openLog()}>
-              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 600 }}>+</span>
-              New moment
-            </button>
-          </div>
-        </section>
-
-        <hr className="rule" />
-
-        {/* ─── About + Ask about ─── */}
-        <div className="d-cols">
+        {/* ─── Rhythm + Ask about ─── */}
+        <div className="d-cols" style={{ gridTemplateColumns: "1.2fr 1fr" }}>
           <section>
-            <div className="section-label">About</div>
-            <dl className="facts">
-              {[
-                { dt: "Birthday", dd: friend.birthday },
-                { dt: "Lives in", dd: friend.livesIn },
-                { dt: "Met", dd: friend.metAt },
-                { dt: "Category", dd: friend.category ? friend.category.charAt(0).toUpperCase() + friend.category.slice(1) : undefined },
-              ].map(({ dt, dd }) => (
-                <div className="fact" key={dt}>
-                  <dt>{dt}</dt>
-                  <dd style={{ color: dd ? "var(--ink)" : "var(--faded)", fontStyle: dd ? "normal" : "italic" }}>{dd ?? "—"}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="section-label">Check-in goals</div>
+            <div className="rhythm">
+              <RhythmRow label="Text" cadenceDays={friend.textFrequencyDays} lastDays={textLastDays} overdue={textOverdue} />
+              <RhythmRow label="Hang out" cadenceDays={friend.hangoutFrequencyDays} lastDays={hangoutLastDays} overdue={hangoutOverdue} />
+            </div>
+            <div className="d-actions">
+              <button
+                onClick={() => openLog()}
+                style={{ display: "flex", alignItems: "center", gap: 12, background: "transparent", border: 0, padding: 0, cursor: "pointer" }}
+              >
+                <span
+                  style={{ width: 44, height: 44, borderRadius: 999, background: "#A68B50", display: "grid", placeItems: "center", color: "#FAF7F2", fontSize: 22, flexShrink: 0, transition: "background 0.15s" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#8A7440"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#A68B50"; }}
+                >+</span>
+                <span style={{ fontSize: 13, color: "#6B6259", fontFamily: "var(--sans)", fontWeight: 400 }}>Add a new moment</span>
+              </button>
+            </div>
           </section>
 
           <section>
@@ -545,10 +547,10 @@ export default function FriendCard({ friend, onUpdateFriend, onDeleteFriend }: F
               <button
                 className="topic topic-add"
                 onClick={() => setShowTopicInput(true)}
-                style={{ display: "grid", gridTemplateColumns: "18px 1fr", gap: 5, width: "100%", border: 0, padding: "7px 0", background: "transparent", cursor: "pointer", textAlign: "left", font: "inherit" }}
+                style={{ display: "grid", gridTemplateColumns: "18px 1fr", gap: 5, width: "100%", border: 0, padding: "7px 0", background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)", fontWeight: 400 }}
               >
                 <span className="topic-mark">+</span>
-                <span>Add something to remember…</span>
+                <span>Something to bring up…</span>
               </button>
             )}
           </section>

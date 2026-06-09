@@ -166,7 +166,7 @@ function Heatmap({ weeks, onCellClick }: { weeks: HeatWeek[]; onCellClick: (cell
           <span
             key={i}
             className="hm-month"
-            style={{ gridColumn: `${m.start + 2} / span ${m.span}`, fontSize: 9.5, fontFamily: "var(--mono)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--hint)", alignSelf: "center" }}
+            style={{ gridColumn: `${m.start + 2} / span ${m.span}`, fontSize: 9.5, fontFamily: "var(--sans)", fontWeight: 400, color: "var(--hint)", alignSelf: "center" }}
           >{m.label}</span>
         ))}
       </div>
@@ -235,7 +235,7 @@ function HealthPopover({
     };
   }, [onClose]);
 
-  const title = group === "healthy" ? "In rhythm" : group === "attention" ? "Due soon" : "Overdue";
+  const title = group === "healthy" ? "Active" : group === "attention" ? "Quiet" : "Distant";
   const subtitle =
     group === "healthy" ? "Friends you're seeing on cadence."
     : group === "attention" ? "About time for a check-in."
@@ -270,7 +270,7 @@ function HealthPopover({
             const hd = lastHungDays(f);
             const dayLabel =
               group === "overdue"
-                ? `${Math.max(td === Infinity ? 0 : td - f.textFrequencyDays, hd === Infinity ? 0 : hd - f.hangoutFrequencyDays)}d over`
+                ? `${Math.max(td === Infinity ? 0 : td - f.textFrequencyDays, hd === Infinity ? 0 : hd - f.hangoutFrequencyDays)}d behind`
                 : group === "attention"
                 ? `due ~${Math.max(0, f.textFrequencyDays - (td === Infinity ? 0 : td))}d`
                 : "on cadence";
@@ -746,7 +746,7 @@ export default function Dashboard() {
         <AppNav />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1 }}>
           <div style={{ textAlign: "center", padding: "48px" }}>
-            <p style={{ fontFamily: "var(--serif)", fontSize: 22, color: "var(--ink)", margin: "0 0 8px" }}>No friends yet</p>
+            <p style={{ fontFamily: "var(--sans)", fontSize: 20, fontWeight: 500, color: "var(--ink)", margin: "0 0 8px" }}>No friends yet</p>
             <p style={{ fontSize: 13, color: "var(--hint)", margin: "0 0 20px" }}>Add friends on the Friends page to see your circle analytics.</p>
             <button className="btn-prim" onClick={() => router.push("/")}>Go to Friends →</button>
           </div>
@@ -794,11 +794,11 @@ export default function Dashboard() {
 
               {/* Monthly report — plain text */}
               <div>
-                <p style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "16px 0 6px" }}>
+                <p style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 400, color: "#9A8F82", margin: "16px 0 6px" }}>
                   {report.monthLabel.split(" ")[0]} report
                   {monthlyLoading && <span style={{ marginLeft: 6, opacity: 0.6 }}>…</span>}
                 </p>
-                <p style={{ fontFamily: "var(--serif)", fontSize: 15, fontWeight: 500, color: "#2E2A24", margin: "0 0 4px" }}>
+                <p style={{ fontFamily: "var(--sans)", fontSize: 15, fontWeight: 500, color: "#2E2A24", margin: "0 0 4px" }}>
                   Your monthly report is out.
                 </p>
                 <p style={{ fontFamily: "var(--sans)", fontSize: 13, fontStyle: "italic", color: "#6B6259", margin: 0, lineHeight: 1.5 }}>
@@ -864,7 +864,7 @@ export default function Dashboard() {
               <div className="section-label">Interactions</div>
               {/* Sparkline + heatmap share one container so widths stay in sync */}
               <div>
-                <p style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "0 0 8px" }}>Weekly trend</p>
+                <p style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 400, color: "#9A8F82", margin: "0 0 8px" }}>Weekly trend</p>
                 {(() => {
                   const trendData = heatmap.slice(-12).map((week) => ({
                     week: `Week of ${week[0].date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
@@ -896,7 +896,7 @@ export default function Dashboard() {
                     </div>
                   );
                 })()}
-                <p style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9A8F82", margin: "0 0 8px" }}>Daily activity</p>
+                <p style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 400, color: "#9A8F82", margin: "0 0 8px" }}>Daily activity</p>
                 <Heatmap weeks={heatmap} onCellClick={setSelectedCell} />
               </div>
               <div className="heatmap-foot">
@@ -963,7 +963,7 @@ export default function Dashboard() {
                       style={{ flex: buckets.healthy.length }}
                       onMouseEnter={() => showHealth("healthy")}
                       onClick={() => setHealthGroup(healthGroup === "healthy" ? null : "healthy")}
-                      title={`${buckets.healthy.length} healthy`}
+                      title={`${buckets.healthy.length} active`}
                     />
                   )}
                   {buckets.attention.length > 0 && (
@@ -983,7 +983,7 @@ export default function Dashboard() {
                       style={{ flex: buckets.overdue.length }}
                       onMouseEnter={() => showHealth("overdue")}
                       onClick={() => setHealthGroup(healthGroup === "overdue" ? null : "overdue")}
-                      title={`${buckets.overdue.length} overdue`}
+                      title={`${buckets.overdue.length} distant`}
                     />
                   )}
                 </div>
@@ -1008,7 +1008,7 @@ export default function Dashboard() {
                     onClick={() => setHealthGroup(healthGroup === g ? null : g)}
                   >
                     <span className={`dot dot-${g}`} />
-                    {buckets[g].length} {g === "attention" ? "soon" : g}
+                    {buckets[g].length} {g === "healthy" ? "active" : g === "attention" ? "quiet" : "distant"}
                   </button>
                 ))}
               </div>
@@ -1051,9 +1051,9 @@ export default function Dashboard() {
                                     <span className="cat-drop-body">
                                       <span className="cat-drop-name">{f.name}</span>
                                       <span className={`cat-drop-status fp-status-${st}`}>
-                                        {st === "healthy" ? "in rhythm"
-                                          : st === "attention" ? `due ~${Math.max(0, f.textFrequencyDays - (td === Infinity ? 0 : td))}d`
-                                          : `${Math.max(0, (td === Infinity ? 0 : td) - f.textFrequencyDays)}d overdue`}
+                                        {st === "healthy" ? "active"
+                                          : st === "attention" ? "quiet"
+                                          : "distant"}
                                       </span>
                                     </span>
                                     <span className="cat-drop-arr">→</span>

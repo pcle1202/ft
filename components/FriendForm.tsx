@@ -15,7 +15,7 @@ const inputStyle: React.CSSProperties = {
   border: 0,
   borderBottom: "1px solid #E0D9CE",
   background: "transparent",
-  font: "inherit",
+  fontFamily: "var(--sans)",
   fontSize: 13,
   color: "#2E2A24",
   padding: "5px 0 6px",
@@ -24,11 +24,12 @@ const inputStyle: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  fontFamily: "var(--font-sans)",
-  fontSize: 9.5,
-  letterSpacing: "0.12em",
+  fontFamily: "var(--sans)",
+  fontSize: 10,
+  letterSpacing: "0.08em",
   textTransform: "uppercase" as const,
   color: "#9A8F82",
+  fontWeight: 400,
   display: "block",
   marginBottom: 4,
 };
@@ -52,7 +53,7 @@ function Field({ children, style }: { children: React.ReactNode; style?: React.C
 
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
-  return <span style={{ color: "#C46060", fontSize: 11, marginTop: 3 }}>{msg}</span>;
+  return <span style={{ color: "#C46060", fontSize: 11, marginTop: 3, fontFamily: "var(--sans)" }}>{msg}</span>;
 }
 
 const InputWithFocus = React.forwardRef<
@@ -83,7 +84,7 @@ const SelectWithFocus = React.forwardRef<
       {...props}
       style={{
         ...inputStyle,
-        fontFamily: "var(--font-lora)",
+        fontFamily: "var(--sans)",
         appearance: "none" as const,
         WebkitAppearance: "none" as const,
         borderBottomColor: focused ? "#A68B50" : "#E0D9CE",
@@ -236,134 +237,100 @@ export default function FriendForm({
   }
 
   const dividerLabelStyle: React.CSSProperties = {
-    fontFamily: "monospace",
-    fontSize: 9.5,
-    letterSpacing: "0.12em",
+    fontFamily: "var(--sans)",
+    fontSize: 10,
+    letterSpacing: "0.08em",
     textTransform: "uppercase",
     color: "#9A8F82",
+    fontWeight: 400,
     marginTop: 8,
     marginBottom: 4,
   };
 
-  const btnPrimStyle: React.CSSProperties = {
-    background: "transparent",
-    color: "#A68B50",
-    border: "1px solid rgba(166,139,80,0.35)",
-    padding: "5px 12px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 500,
-    cursor: "pointer",
-  };
-
-  const btnGhostStyle: React.CSSProperties = {
-    background: "#F3EDE3",
-    border: "1px solid #E0D9CE",
-    borderRadius: 999,
-    padding: "5px 12px",
-    fontSize: 12,
-    cursor: "pointer",
-    color: "#6B6259",
-  };
-
   return (
-    <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <>
+      {/* ── Form body (scrollable) ── */}
+      <form id="friend-form" onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      {/* ── Photo section ── */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingBottom: 4 }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: 999,
-          background: photoUrl ? "transparent" : avatarColor,
-          overflow: "hidden", display: "grid", placeItems: "center", flexShrink: 0,
-          boxShadow: "0 1px 0 rgba(50,30,10,0.12), inset 0 -2px 0 rgba(0,0,0,0.08)",
-        }}>
-          {photoUrl ? (
-            <img src={photoUrl} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <span style={{ color: "#FFFBF1", fontFamily: "var(--serif)", fontSize: 26, fontWeight: 400, userSelect: "none" }}>
-              {initials}
-            </span>
-          )}
-        </div>
-
-        {photoUrl ? (
-          <button
-            type="button"
-            onClick={removePhoto}
-            style={{ background: "transparent", border: 0, color: "#9A8F82", fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 2 }}
-          >
-            Remove
-          </button>
-        ) : (
-          <label style={{ cursor: "pointer" }}>
-            <span style={{
-              border: "1px dashed #C4BAB0",
-              background: "transparent",
-              color: "#9A8F82",
-              fontSize: 11,
-              padding: "4px 10px",
-              borderRadius: 999,
-              display: "inline-block",
-              cursor: "pointer",
+        {/* ── Row 0: Avatar + Name/Category inline ── */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          {/* Left: avatar circle + photo button */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: 999,
+              background: photoUrl ? "transparent" : avatarColor,
+              overflow: "hidden", display: "grid", placeItems: "center",
+              boxShadow: "0 1px 0 rgba(50,30,10,0.12), inset 0 -2px 0 rgba(0,0,0,0.08)",
             }}>
-              Add photo
-            </span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={handlePhotoChange}
-            />
-          </label>
-        )}
+              {photoUrl ? (
+                <img src={photoUrl} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <span style={{ color: "#FFFBF1", fontFamily: "var(--serif)", fontSize: 22, fontWeight: 400, userSelect: "none" }}>
+                  {initials}
+                </span>
+              )}
+            </div>
 
-        {sizeWarning && (
-          <p style={{ color: "#D4A855", fontSize: 11, margin: 0, textAlign: "center", maxWidth: 220, lineHeight: 1.5 }}>
-            This image is large and may slow the app. Consider using a smaller photo.
-          </p>
-        )}
-      </div>
+            {photoUrl ? (
+              <button
+                type="button"
+                onClick={removePhoto}
+                style={{ background: "transparent", border: 0, color: "#9A8F82", fontSize: 11, fontFamily: "var(--sans)", cursor: "pointer", padding: 0 }}
+              >
+                Remove
+              </button>
+            ) : (
+              <label style={{ cursor: "pointer" }}>
+                <span style={{ color: "#9A8F82", fontSize: 11, fontFamily: "var(--sans)", cursor: "pointer" }}>
+                  Add photo
+                </span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handlePhotoChange}
+                />
+              </label>
+            )}
 
-      {/* ── Top actions ── */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingBottom: 4 }}>
-        {onCancel && (
-          <button type="button" onClick={onCancel} style={btnGhostStyle}>Cancel</button>
-        )}
-        <button type="submit" style={btnPrimStyle}>
-          {isEdit ? "Save changes" : "Add to my circle"}
-        </button>
-      </div>
+            {sizeWarning && (
+              <p style={{ color: "#D4A855", fontSize: 11, fontFamily: "var(--sans)", margin: 0, textAlign: "center", maxWidth: 80, lineHeight: 1.5 }}>
+                Large image
+              </p>
+            )}
+          </div>
 
-      {/* ── Row 1: Name + Category ── */}
-      <div style={{ display: "flex", gap: 12 }}>
-        <Field style={{ flex: 1 }}>
-          <FieldLabel required>Name</FieldLabel>
-          <InputWithFocus
-            ref={nameRef}
-            placeholder="Their name"
-            value={name}
-            onChange={(e) => { setName(e.target.value); clearError("name"); }}
-          />
-          <FieldError msg={errors.name} />
-        </Field>
-        <Field style={{ width: 140 }}>
-          <FieldLabel required>Category</FieldLabel>
-          <SelectWithFocus
-            ref={categoryRef}
-            value={category}
-            onChange={(e) => { setCategory(e.target.value as FriendCategory | ""); clearError("category"); }}
-          >
-            {!isEdit && <option value="">Select…</option>}
-            <option value="close friend">Close friend</option>
-            <option value="family">Family</option>
-            <option value="classmate">Classmate</option>
-            <option value="coworker">Coworker</option>
-            <option value="other">Other</option>
-          </SelectWithFocus>
-          <FieldError msg={errors.category} />
-        </Field>
-      </div>
+          {/* Right: Name + Category stacked */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <Field>
+              <FieldLabel required>Name</FieldLabel>
+              <InputWithFocus
+                ref={nameRef}
+                placeholder="Their name"
+                value={name}
+                onChange={(e) => { setName(e.target.value); clearError("name"); }}
+              />
+              <FieldError msg={errors.name} />
+            </Field>
+            <Field>
+              <FieldLabel required>Category</FieldLabel>
+              <SelectWithFocus
+                ref={categoryRef}
+                value={category}
+                onChange={(e) => { setCategory(e.target.value as FriendCategory | ""); clearError("category"); }}
+              >
+                {!isEdit && <option value="">Select…</option>}
+                <option value="close friend">Close friend</option>
+                <option value="family">Family</option>
+                <option value="classmate">Classmate</option>
+                <option value="coworker">Coworker</option>
+                <option value="other">Other</option>
+              </SelectWithFocus>
+              <FieldError msg={errors.category} />
+            </Field>
+          </div>
+        </div>
 
       {/* ── Row 2: Notes ── */}
       <Field>
@@ -477,27 +444,30 @@ export default function FriendForm({
         </div>
       )}
 
-      {/* ── Remove friend (edit only) ── */}
-      {isEdit && onDelete && (
-        <div style={{ paddingTop: 4 }}>
-          <button
-            type="button"
-            onClick={onDelete}
-            style={{
-              background: "transparent",
-              border: 0,
-              color: "#C46060",
-              fontSize: 12,
-              cursor: "pointer",
-              textDecoration: "underline",
-              textUnderlineOffset: 3,
-              padding: 0,
-            }}
-          >
-            Remove friend
+      </form>
+
+      {/* ── Sticky footer ── */}
+      <div className="modal-footer">
+        <div>
+          {isEdit && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              style={{ background: "transparent", border: 0, color: "#C46060", fontSize: 12, fontFamily: "var(--sans)", cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}
+            >
+              Remove friend
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {onCancel && (
+            <button type="button" onClick={onCancel} className="modal-footer-cancel">Cancel</button>
+          )}
+          <button type="submit" form="friend-form" className="modal-footer-save">
+            {isEdit ? "Save changes" : "Add to my circle"}
           </button>
         </div>
-      )}
-    </form>
+      </div>
+    </>
   );
 }

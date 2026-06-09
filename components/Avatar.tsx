@@ -19,7 +19,7 @@ const sizePx: Record<AvatarSize, number> = {
   sm: 26,
   md: 30,
   reach: 38,
-  lg: 56,
+  lg: 80,
 };
 
 export function FriendAvatar({
