@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ mood: null });
     }
 
-    const prompt = `Classify the mood of this interaction as exactly one of: warm, deep, fun, awkward.\nwarm = caring and supportive, deep = serious or emotional, fun = lighthearted and playful, awkward = uncomfortable or distant.\nInteraction note: "${note}"\nRespond with only the single lowercase word.`;
+    const prompt = `Use American English spelling and punctuation throughout. Use double quotation marks, not single. Write "organize" not "organise", "favorite" not "favourite", etc.\nClassify the mood of this interaction as exactly one of: warm, deep, fun, awkward.\nwarm = caring and supportive, deep = serious or emotional, fun = lighthearted and playful, awkward = uncomfortable or distant.\nInteraction note: "${note}"\nRespond with only the single lowercase word.`;
 
     const response = await generateAIResponse(prompt);
     const mood = response.trim().toLowerCase().replace(/[^a-z]/g, "");

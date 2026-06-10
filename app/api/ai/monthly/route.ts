@@ -28,15 +28,9 @@ export async function POST(request: NextRequest) {
       })
       .join("\n");
 
-    const prompt = `You are summarizing someone's social activity for ${monthName}. Write 2-3 sentences in SECOND PERSON ONLY ("you", "your"). STRICT RULES — violating any of these is a failure:
-- Never start with "Dear" or any greeting
-- Never use the word "I" or "I've" or "I'm" anywhere
-- No em dashes
-- No sentimental or flowery language
-- Start directly with a factual observation
-- Use American double quotation marks (" ") not single quotes (' ')
+    const prompt = `Write exactly two short sentences about this person's social activity for ${monthName}. Use this format: "[Name] showed up the most. [Other name] has been quiet." Use first names only. Be specific. American English. No em dashes. No "I". Return only the two sentences, nothing else.
 
-Friend interactions:\n${lines}\n\nMention specific friends by name. Note who got the most attention and who got less. Keep it plain and direct.`;
+Friend interactions:\n${lines}`;
 
     const report = await generateAIResponse(prompt);
     return NextResponse.json({ report: report.trim() });

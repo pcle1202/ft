@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     }
 
     const recentNotes = notes.slice(0, 5).map((n) => `- ${n}`).join("\n");
-    const prompt = `Recent notes about ${name}:\n${recentNotes}\n\nSuggest 2-3 short topic phrases to bring up next time (like "how the exhibit went" or "marathon training"). Reference specific details from the notes. Return only a JSON array of short phrases.\nExample: ["how the exhibit went", "kitten update"]\nReturn only the JSON array.`;
+    const prompt = `Use American English spelling and punctuation throughout. Use double quotation marks, not single. Write "organize" not "organise", "favorite" not "favourite", etc.\nRecent notes about ${name}:\n${recentNotes}\n\nSuggest 2-3 short topic phrases to bring up next time (like "how the exhibit went" or "marathon training"). Reference specific details from the notes. Return only a JSON array of short phrases.\nExample: ["how the exhibit went", "kitten update"]\nReturn only the JSON array.`;
 
     const response = await generateAIResponse(prompt);
     const match = response.match(/\[[\s\S]*\]/);

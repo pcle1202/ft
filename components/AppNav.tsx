@@ -1,12 +1,30 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useUser, UserButton } from "@clerk/nextjs";
+import { useEffect, useRef, useState } from "react";
+import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 
 export default function AppNav() {
-  const pathname = usePathname();
   const { isSignedIn } = useUser();
+  const [showSignIn, setShowSignIn] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showSignIn) return;
+    function onDown(e: MouseEvent) {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        setShowSignIn(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowSignIn(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showSignIn]);
 
   return (
     <header className="topnav">
@@ -20,30 +38,32 @@ export default function AppNav() {
         <div className="brand-name">friendkeeper</div>
       </div>
 
-      {/* Center: Nav links */}
-      <nav className="topnav-links">
-        <Link
-          href="/dashboard"
-          className={"navlink " + (pathname === "/dashboard" ? "is-on" : "")}
-        >
-          Dashboard
-        </Link>
-        <Link
-          href="/"
-          className={"navlink " + (pathname === "/" ? "is-on" : "")}
-        >
-          Friends
-        </Link>
-      </nav>
-
       {/* Right: User */}
-      <div className="topnav-right">
+      <div className="topnav-right" style={{ gridColumn: "3", position: "relative" }} ref={popupRef}>
         {isSignedIn ? (
           <UserButton />
         ) : (
-          <Link href="/sign-in" className="navlink" style={{ fontSize: 13 }}>
-            Sign in
-          </Link>
+          <>
+            <button
+              onClick={() => setShowSignIn((v) => !v)}
+              style={{ background: "transparent", border: 0, padding: 0, fontSize: 13, color: "var(--accent)", fontFamily: "var(--sans)", fontWeight: 500, cursor: "pointer" }}
+            >
+              Sign in
+            </button>
+            {showSignIn && (
+              <div style={{
+                position: "absolute",
+                top: "calc(100% + 10px)",
+                right: 0,
+                zIndex: 200,
+                transform: "scale(0.78)",
+                transformOrigin: "top right",
+                filter: "drop-shadow(0 8px 24px rgba(50,30,10,0.18))",
+              }}>
+                <SignIn routing="hash" />
+              </div>
+            )}
+          </>
         )}
       </div>
     </header>

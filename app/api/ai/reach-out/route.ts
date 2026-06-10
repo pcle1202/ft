@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
             : `, within frequency goal of every ${f.frequencyDays} days`;
         const data = `${f.name} (${f.category}): ${contactInfo}${overdueInfo}, health score ${f.healthScore}/100`;
 
-        const prompt = `In one casual sentence, explain why the user should reach out to ${f.name} based on this data: ${data}. Be specific and warm, not robotic. Don't start with "You should" — be more conversational.`;
+        const prompt = `Use American English spelling and punctuation throughout. Use double quotation marks, not single. Write "organize" not "organise", "favorite" not "favourite", etc.\nIn one casual sentence, explain why the user should reach out to ${f.name} based on this data: ${data}. Be specific and warm, not robotic. Don't start with "You should" — be more conversational.`;
 
         try {
           const reason = await generateAIResponse(prompt);

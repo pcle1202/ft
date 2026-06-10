@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       .join("\n");
 
     const aboutLine = notes ? `About ${name}: ${notes}\n\n` : "";
-    const prompt = `${aboutLine}Recent history with ${name}:\n${historyLines}\n\nBased on this friendship history, write one warm and specific conversation starter the user could send right now. Reference something real from their history. Keep it to 1-2 sentences, casual and friendly. Do not wrap the message in quotation marks. If you use any quotes inside the text, use American double quotes (" ") not single quotes (' ').`;
+    const prompt = `Use American English spelling and punctuation throughout. Use double quotation marks, not single. Write "organize" not "organise", "favorite" not "favourite", etc.\n${aboutLine}Recent history with ${name}:\n${historyLines}\n\nBased on this friendship history, write one warm and specific conversation starter the user could send right now. Reference something real from their history. Keep it to 1-2 sentences, casual and friendly. Do not wrap the message in quotation marks. If you use any quotes inside the text, use American double quotes (" ") not single quotes (' ').`;
 
     const starter = await generateAIResponse(prompt);
     return NextResponse.json({ starter: starter.trim() });
