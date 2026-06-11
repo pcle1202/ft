@@ -342,16 +342,23 @@ export default function FriendCard({ friend, onUpdateFriend, onDeleteFriend }: F
 
   // Fetch AI topic suggestions
   useEffect(() => {
+    const existing = new Set((friend.nextTopics ?? []).map((t) => t.toLowerCase()));
+    const fallbacks = ["How's life going?", "What have you been up to lately?", "Any big plans coming up?"]
+      .filter((s) => !existing.has(s.toLowerCase()));
+
     const notes = interactions.filter((i) => i.notes).map((i) => i.notes!).slice(0, 5);
-    if (notes.length === 0) return;
+    if (notes.length === 0) {
+      setAiSuggestions(fallbacks);
+      return;
+    }
     setSuggestionsLoading(true);
     fetch("/api/ai/suggest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: friend.name, notes }) })
       .then((r) => r.json())
       .then((d: { suggestions: string[] }) => {
-        const existing = new Set((friend.nextTopics ?? []).map((t) => t.toLowerCase()));
-        setAiSuggestions((d.suggestions ?? []).filter((s) => !existing.has(s.toLowerCase())));
+        const aiResults = (d.suggestions ?? []).filter((s) => !existing.has(s.toLowerCase()));
+        setAiSuggestions(aiResults.length > 0 ? aiResults : fallbacks);
       })
-      .catch(() => {})
+      .catch(() => setAiSuggestions(fallbacks))
       .finally(() => setSuggestionsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

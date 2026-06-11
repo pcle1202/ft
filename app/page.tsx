@@ -1006,7 +1006,7 @@ export default function Home() {
     const guestMode = localStorage.getItem("friendkeeper-guest") === "1";
     if (!isSignedIn && !guestMode) { localStorage.setItem("friendkeeper-guest", "1"); }
     const uid = isSignedIn ? user!.id : "guest";
-    const guest = !isSignedIn && guestMode;
+    const guest = !isSignedIn;
     if (isSignedIn) localStorage.removeItem("friendkeeper-guest");
     setIsGuest(guest);
     setUserId(uid);
@@ -1123,7 +1123,7 @@ export default function Home() {
         for (const friend of samples) {
           try { await addFriend(friend, userId); } catch { /* already exists */ }
         }
-        loadSampleData(userId, []);
+        loadSampleData(userId, friends);
         const updated = await getFriends(userId);
         setFriends(updated);
       }
