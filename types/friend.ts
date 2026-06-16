@@ -25,7 +25,7 @@ export type Friend = {
   nextTopics?: string[];
 };
 
-export type InteractionType = "text" | "hangout" | "note";
+export type InteractionType = "text" | "call" | "other" | "hangout" | "note";
 
 export type Interaction = {
   id: string;

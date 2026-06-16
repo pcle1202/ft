@@ -53,7 +53,9 @@ function cadenceLabel(d: number): string {
 
 function kindLabel(t: InteractionType): string {
   if (t === "hangout") return "Hung out";
+  if (t === "call") return "Called";
   if (t === "text") return "Texted";
+  if (t === "other") return "Talked";
   return "Note";
 }
 
@@ -196,6 +198,7 @@ function LogMomentForm({ friend, defaultKind, initial, onSave, onCancel, onDelet
   onDelete?: () => void;
 }) {
   const todayStr = new Date().toISOString().slice(0, 10);
+  const isTalked = (t: InteractionType) => t === "text" || t === "call" || t === "other";
   const [kind, setKind] = useState<InteractionType>(initial?.type ?? defaultKind);
   const [date, setDate] = useState(initial ? initial.date.slice(0, 10) : todayStr);
   const [notes, setNotes] = useState(initial?.notes ?? "");
@@ -207,7 +210,7 @@ function LogMomentForm({ friend, defaultKind, initial, onSave, onCancel, onDelet
   const firstName = (friend.name ?? "").split(" ")[0];
   const notePlaceholder = kind === "hangout"
     ? `What did you and ${firstName} get up to?`
-    : kind === "text"
+    : isTalked(kind)
     ? `What did you and ${firstName} talk about?`
     : "What do you want to remember?";
 
@@ -238,18 +241,19 @@ function LogMomentForm({ friend, defaultKind, initial, onSave, onCancel, onDelet
     >
       {/* Kind tabs */}
       <div className="moment-kind-tabs" role="tablist">
-        {(["text", "hangout", "note"] as InteractionType[]).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={`mkt${kind === t ? " is-on" : ""}`}
-            onClick={() => setKind(t)}
-          >
-            <span className={`mkt-dot${t === "hangout" ? " mkt-hangout" : t === "note" ? " mkt-note" : ""}`} />
-            {kindLabel(t)}
-          </button>
-        ))}
+        <button type="button" className={`mkt${isTalked(kind) ? " is-on" : ""}`} onClick={() => { if (!isTalked(kind)) setKind("text"); }}>Talked</button>
+        <button type="button" className={`mkt${kind === "hangout" ? " is-on" : ""}`} onClick={() => setKind("hangout")}>Hung out</button>
+        <button type="button" className={`mkt${kind === "note" ? " is-on" : ""}`} onClick={() => setKind("note")}>Note</button>
       </div>
+      {isTalked(kind) && (
+        <div className="mkt-sub" role="group" aria-label="How?">
+          {(["call", "text", "other"] as InteractionType[]).map((m) => (
+            <button key={m} type="button" className={`mkt-sub-btn${kind === m ? " is-on" : ""}`} onClick={() => setKind(m)}>
+              {m === "call" ? "Call" : m === "text" ? "Text" : "Other"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Date + location */}
       <div className="ff-row">
@@ -474,7 +478,7 @@ export default function FriendCard({ friend, onUpdateFriend, onDeleteFriend }: F
           <section>
             <div className="section-label">Check-in goals</div>
             <div className="rhythm">
-              <RhythmRow label="Text" cadenceDays={friend.textFrequencyDays} lastDays={textLastDays} overdue={textOverdue} />
+              <RhythmRow label="Talk" cadenceDays={friend.textFrequencyDays} lastDays={textLastDays} overdue={textOverdue} />
               <RhythmRow label="Hang out" cadenceDays={friend.hangoutFrequencyDays} lastDays={hangoutLastDays} overdue={hangoutOverdue} />
             </div>
             <div className="d-actions">

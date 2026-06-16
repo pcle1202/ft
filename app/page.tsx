@@ -51,7 +51,9 @@ function lastHungDays(f: Friend): number { return getDaysAgo(f.lastHungOut); }
 
 function kindWord(k: string): string {
   if (k === "hangout") return "Hung out";
+  if (k === "call") return "Called";
   if (k === "text") return "Texted";
+  if (k === "other") return "Talked";
   return "Noted";
 }
 
@@ -167,7 +169,7 @@ type ReportData = {
   uniqueFriends: number;
   topTwo: Array<{ f: Friend; n: number }>;
   priorityText: string;
-  slipped: Array<{ f: Friend; weeks: number }>;
+  slipped: Array<{ f: Friend; days: number | null; weeks: number | null }>;
   slippedText: string;
   drifting: Array<{ f: Friend; ratio: number }>;
   opener: string;
@@ -218,10 +220,10 @@ function buildMonthReport(friends: Friend[]): ReportData {
         .sort((a, b) => b.date.localeCompare(a.date))[0];
       const days = lastBefore
         ? Math.floor((prevEnd.getTime() - new Date(lastBefore.date).getTime()) / (1000 * 60 * 60 * 24))
-        : 999;
-      return { f, days, weeks: Math.max(1, Math.round(days / 7)) };
+        : null;
+      return { f, days, weeks: days !== null ? Math.max(1, Math.round(days / 7)) : null };
     })
-    .sort((a, b) => b.days - a.days)
+    .sort((a, b) => (b.days ?? 99999) - (a.days ?? 99999))
     .slice(0, 2);
 
   const drifting = friends
@@ -259,16 +261,18 @@ function buildMonthReport(friends: Friend[]): ReportData {
       ? `${topTwo[0].f.name.split(" ")[0]} got most of your energy. ${topTwo[0].n} out of ${totalMoments} interactions.`
       : "No standout last month. You spread your attention pretty evenly.";
 
+  const weeksPhrase = (w: number | null) =>
+    w !== null ? `${w} week${w === 1 ? "" : "s"}` : "no prior contact";
   const slippedText =
     slipped.length >= 2
-      ? `${slipped[0].f.name.split(" ")[0]} and ${slipped[1].f.name.split(" ")[0]} got no contact in ${monthShort}. ${slipped[0].f.name.split(" ")[0]} was ${slipped[0].weeks} week${slipped[0].weeks === 1 ? "" : "s"} out by end of month.`
+      ? `${slipped[0].f.name.split(" ")[0]} and ${slipped[1].f.name.split(" ")[0]} got no contact in ${monthShort}. ${slipped[0].f.name.split(" ")[0]} was ${weeksPhrase(slipped[0].weeks)} out by end of month.`
       : slipped.length === 1
-      ? `${slipped[0].f.name.split(" ")[0]} got no contact in ${monthShort}. It had been ${slipped[0].weeks} week${slipped[0].weeks === 1 ? "" : "s"} by the end of the month.`
+      ? `${slipped[0].f.name.split(" ")[0]} got no contact in ${monthShort}.${slipped[0].weeks !== null ? ` It had been ${weeksPhrase(slipped[0].weeks)} by the end of the month.` : ""}`
       : `Everyone got at least some contact in ${monthShort}.`;
 
   const sgTarget = drifting[0]?.f ?? slipped[0]?.f ?? null;
   const suggestion = sgTarget
-    ? { target: sgTarget, text: `Reach out to ${sgTarget.name.split(" ")[0]} in ${currentMonthName}. A quick message is enough.` }
+    ? { target: sgTarget, text: `Reach out to ${sgTarget.name.split(" ")[0]} in ${currentMonthName}.` }
     : null;
 
   return {
@@ -285,9 +289,10 @@ function buildMonthReport(friends: Friend[]): ReportData {
 function Heatmap({ weeks, onCellClick }: { weeks: HeatWeek[]; onCellClick: (cell: HeatCell) => void }) {
   const labels = monthLabels(weeks.length);
   const dayLabels = ["", "Mon", "", "Wed", "", "Fri", ""];
+  const [tooltip, setTooltip] = useState<{ cell: HeatCell; x: number; y: number } | null>(null);
 
   return (
-    <div className="heatmap-wrap" aria-hidden="true">
+    <div className="heatmap-wrap" style={{ position: "relative" }}>
       <div className="hm-months">
         <span />
         {labels.map((m, i) => (
@@ -307,15 +312,19 @@ function Heatmap({ weeks, onCellClick }: { weeks: HeatWeek[]; onCellClick: (cell
             <div className="hm-week" key={wi}>
               {week.map((cell, di) => {
                 const dateLabel = cell.date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                const title = cell.count === 0 ? `${dateLabel} — no moments` : `${dateLabel} — ${cell.count} moment${cell.count === 1 ? "" : "s"}`;
+                const ariaLabel = cell.count === 0 ? `${dateLabel} — no moments` : `${dateLabel} — ${cell.count} moment${cell.count === 1 ? "" : "s"}`;
                 return (
                   <button
                     key={di}
                     type="button"
                     className={`hm-cell hm-l${cell.level}${cell.count > 0 ? " hm-has" : ""}`}
                     onClick={() => cell.count > 0 && onCellClick(cell)}
-                    title={title}
-                    aria-label={title}
+                    aria-label={ariaLabel}
+                    onMouseEnter={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setTooltip({ cell, x: r.left + r.width / 2, y: r.top });
+                    }}
+                    onMouseLeave={() => setTooltip(null)}
                   />
                 );
               })}
@@ -323,6 +332,30 @@ function Heatmap({ weeks, onCellClick }: { weeks: HeatWeek[]; onCellClick: (cell
           ))}
         </div>
       </div>
+      {tooltip && createPortal(
+        <div
+          className="hm-tooltip"
+          style={{ left: tooltip.x, top: tooltip.y - 8 }}
+          onMouseEnter={() => setTooltip(null)}
+        >
+          <div className="hm-tooltip-date">
+            {tooltip.cell.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+          </div>
+          {tooltip.cell.count === 0 ? (
+            <div className="hm-tooltip-empty">No moments</div>
+          ) : (
+            <ul className="hm-tooltip-list">
+              {tooltip.cell.moments.map(({ friend, interaction }, i) => (
+                <li key={i}>
+                  <span className="hm-tooltip-kind">{kindWord(interaction.type)}</span>
+                  <span className="hm-tooltip-name">{friend.name.split(" ")[0]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -350,7 +383,7 @@ function HealthPopover({
     const onDown = (e: MouseEvent) => {
       if (!ref.current) return;
       if (ref.current.contains(e.target as Node)) return;
-      const t = (e.target as Element).closest?.(".health-leg-btn, .health-seg");
+      const t = (e.target as Element).closest?.(".health-seg");
       if (t) return;
       onClose();
     };
@@ -433,6 +466,17 @@ function MonthReportContent({
 }) {
   const nextMonthName = new Date().toLocaleString("en-US", { month: "long" });
 
+  const visibleSections = (
+    [
+      "overview",
+      report.topTwo.length > 0 && "prioritized",
+      report.slipped.length > 0 && "slipped",
+      report.totalMoments > 0 && "pattern",
+      report.suggestion && "suggestion",
+    ] as const
+  ).filter(Boolean) as string[];
+  const sn = (key: string) => String(visibleSections.indexOf(key) + 1).padStart(2, "0");
+
   return (
     <div className="report-doc">
       <header className="report-doc-head">
@@ -456,14 +500,14 @@ function MonthReportContent({
       </div>
 
       <section className="rd-section">
-        <div className="rd-num">01</div>
+        <div className="rd-num">{sn("overview")}</div>
         <h3 className="rd-h">{report.monthShort}</h3>
         <p className="rd-p rd-p-large">{aiReport ?? report.opener}</p>
       </section>
 
       {report.topTwo.length > 0 && (
         <section className="rd-section">
-          <div className="rd-num">02</div>
+          <div className="rd-num">{sn("prioritized")}</div>
           <h3 className="rd-h">Who you prioritized</h3>
           <p className="rd-p">{report.priorityText}</p>
           <ul className="rd-friends" style={{ marginTop: 10 }}>
@@ -486,7 +530,7 @@ function MonthReportContent({
 
       {report.slipped.length > 0 && (
         <section className="rd-section">
-          <div className="rd-num">03</div>
+          <div className="rd-num">{sn("slipped")}</div>
           <h3 className="rd-h">Who slipped through</h3>
           <p className="rd-p">{report.slippedText}</p>
           <ul className="rd-friends" style={{ marginTop: 10 }}>
@@ -497,7 +541,7 @@ function MonthReportContent({
                   <FriendAvatar friend={f} size="sm" />
                   <span className="rd-friend-main">
                     <span className="rd-friend-name">{f.name}</span>
-                    <span className="rd-friend-sub">{weeks} week{weeks === 1 ? "" : "s"} since last contact</span>
+                    <span className="rd-friend-sub">{weeks !== null ? `${weeks} week${weeks === 1 ? "" : "s"} since last contact` : "No contact on record"}</span>
                   </span>
                   <span className="rd-friend-arr">→</span>
                 </button>
@@ -507,20 +551,22 @@ function MonthReportContent({
         </section>
       )}
 
-      <section className="rd-section">
-        <div className="rd-num">04</div>
-        <h3 className="rd-h">Pattern noticed</h3>
-        <p className="rd-p">
-          You tend to reach out on <strong>{report.insight.dayName}</strong>.{" "}
-          {report.hangs >= report.texts
-            ? "You showed up in person about as much as over text. That's rare."
-            : `Texts outpaced hangouts ${report.texts} to ${report.hangs}. The connection is there, it just lives mostly over text.`}
-        </p>
-      </section>
+      {report.totalMoments > 0 && (
+        <section className="rd-section">
+          <div className="rd-num">{sn("pattern")}</div>
+          <h3 className="rd-h">Pattern noticed</h3>
+          <p className="rd-p">
+            You tend to reach out on <strong>{report.insight.dayName}</strong>.{" "}
+            {report.hangs >= report.texts
+              ? "You showed up in person about as much as over text. That's rare."
+              : `Texts outpaced hangouts ${report.texts} to ${report.hangs}. The connection is there, it just lives mostly over text.`}
+          </p>
+        </section>
+      )}
 
       {report.suggestion && (
         <section className="rd-section rd-section-suggest">
-          <div className="rd-num">05</div>
+          <div className="rd-num">{sn("suggestion")}</div>
           <h3 className="rd-h">For {nextMonthName}</h3>
           <p className="rd-p rd-p-large">{report.suggestion.text}</p>
           <button className="rd-cta" onClick={() => onOpenFriend(report.suggestion!.target.id)}>
@@ -577,6 +623,18 @@ function Modal({
   );
 }
 
+// ─── SparkTooltip (module-level so it never remounts on re-render) ───────────
+
+function SparkTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { week: string; count: number } }> }) {
+  if (!active || !payload?.length) return null;
+  const { week, count } = payload[0].payload;
+  return (
+    <div style={{ background: "#2E2A24", color: "#FAF7F2", fontSize: 11, padding: "5px 10px", borderRadius: 4, whiteSpace: "nowrap" }}>
+      {week} · {count} interaction{count !== 1 ? "s" : ""}
+    </div>
+  );
+}
+
 // ─── DashboardView ────────────────────────────────────────────────────────────
 
 function DashboardView({
@@ -594,9 +652,12 @@ function DashboardView({
   const [reportOpen, setReportOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState<HeatCell | null>(null);
   const [healthGroup, setHealthGroup] = useState<"healthy" | "attention" | "overdue" | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const healthHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchedRef = useRef(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const showHealth = (g: "healthy" | "attention" | "overdue") => {
     if (healthHideTimer.current) clearTimeout(healthHideTimer.current);
@@ -609,29 +670,43 @@ function DashboardView({
   };
 
   useEffect(() => {
-    if (!userId || friends.length === 0 || fetchedRef.current) return;
+    if (!userId || fetchedRef.current) return;
     fetchedRef.current = true;
 
     const prevMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
     const monthKey = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
     const cacheKey = `friendkeeper-monthly-report-v2-${monthKey}-${userId}`;
+    const fpKey = `friendkeeper-monthly-report-fp-${monthKey}-${userId}`;
+
+    const mFriends = friends
+      .map((f) => ({ name: f.name, id: f.id, interactions: (f.interactions ?? []).filter((i) => i.date.startsWith(monthKey)) }))
+      .filter((f) => f.interactions.length > 0);
+    const fingerprint = mFriends.map((f) => f.id).sort().join(",");
+
     const cached = localStorage.getItem(cacheKey);
-    if (cached) {
+    const cachedFp = localStorage.getItem(fpKey);
+
+    if (cached && cachedFp === fingerprint) {
       setMonthlyReport(cached);
-    } else {
+      return;
+    }
+
+    // Cache miss or stale — clear and re-fetch
+    localStorage.removeItem(cacheKey);
+    localStorage.removeItem(fpKey);
+
+    if (mFriends.length > 0) {
       const monthName = prevMonth.toLocaleString("en-US", { month: "long" });
-      const mFriends = friends.map((f) => ({
-        name: f.name,
-        interactions: (f.interactions ?? []).filter((i) => i.date.startsWith(monthKey)),
-      })).filter((f) => f.interactions.length > 0);
-      if (mFriends.length > 0) {
-        fetch("/api/ai/monthly", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: mFriends, monthName }) })
-          .then((r) => r.json())
-          .then((d: { report: string | null }) => {
-            if (d.report) { setMonthlyReport(d.report); localStorage.setItem(cacheKey, d.report); }
-          })
-          .catch(() => {});
-      }
+      fetch("/api/ai/monthly", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ friends: mFriends.map(({ name, interactions }) => ({ name, interactions })), monthName }) })
+        .then((r) => r.json())
+        .then((d: { report: string | null }) => {
+          if (d.report) {
+            setMonthlyReport(d.report);
+            localStorage.setItem(cacheKey, d.report);
+            localStorage.setItem(fpKey, fingerprint);
+          }
+        })
+        .catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [friends, userId]);
@@ -755,16 +830,14 @@ function DashboardView({
                     </div>
                     <div className="health-legend">
                       {(["healthy", "attention", "overdue"] as const).filter((g) => buckets[g].length > 0).map((g) => (
-                        <button
+                        <span
                           key={g}
-                          type="button"
-                          className={`health-leg health-leg-btn${healthGroup === g ? " is-active" : ""}`}
+                          className="health-leg"
                           style={{ flex: buckets[g].length }}
-                          onClick={() => setHealthGroup(healthGroup === g ? null : g)}
                         >
                           <span className={`dot dot-${g}`} />
                           {buckets[g].length} {g === "healthy" ? "active" : g === "attention" ? "quiet" : "distant"}
-                        </button>
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -854,29 +927,33 @@ function DashboardView({
                   week: `Week of ${week[0].date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
                   count: week.reduce((s, c) => s + c.count, 0),
                 }));
-                const SparkTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { week: string; count: number } }> }) => {
-                  if (!active || !payload?.length) return null;
-                  const { week, count } = payload[0].payload;
-                  return (
-                    <div style={{ background: "#2E2A24", color: "#FAF7F2", fontSize: 11, padding: "5px 10px", borderRadius: 4, border: "none", whiteSpace: "nowrap" }}>
-                      {week} · {count} interaction{count !== 1 ? "s" : ""}
-                    </div>
-                  );
-                };
                 return (
-                  <div style={{ height: 64, marginBottom: 36 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                  <div style={{ marginBottom: 36, cursor: "crosshair" }}>
+                    {mounted && <ResponsiveContainer width="100%" height={80}>
+                      <AreaChart data={trendData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                         <defs>
                           <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#A68B50" stopOpacity={0.3} />
+                            <stop offset="5%" stopColor="#A68B50" stopOpacity={0.25} />
                             <stop offset="95%" stopColor="#A68B50" stopOpacity={0} />
                           </linearGradient>
                         </defs>
-                        <RechartsTooltip content={<SparkTooltip />} />
-                        <Area type="monotone" dataKey="count" stroke="#A68B50" strokeWidth={1.5} fill="url(#sparkGrad)" dot={false} />
+                        <RechartsTooltip
+                          content={<SparkTooltip />}
+                          cursor={{ stroke: "#A68B50", strokeWidth: 1, strokeDasharray: "3 3" }}
+                          wrapperStyle={{ pointerEvents: "none" }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="count"
+                          stroke="#A68B50"
+                          strokeWidth={1.5}
+                          fill="url(#sparkGrad)"
+                          dot={false}
+                          activeDot={{ r: 4, fill: "#A68B50", stroke: "#FAF7F2", strokeWidth: 2 }}
+                          isAnimationActive={false}
+                        />
                       </AreaChart>
-                    </ResponsiveContainer>
+                    </ResponsiveContainer>}
                   </div>
                 );
               })()}
@@ -999,6 +1076,7 @@ export default function Home() {
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sampleLoaded, setSampleLoaded] = useState(false);
+  const [dashKey, setDashKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1096,6 +1174,13 @@ export default function Home() {
     router.push("/sign-in");
   }
 
+  function clearMonthlyReportCache(uid: string) {
+    const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+    const mk = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+    localStorage.removeItem(`friendkeeper-monthly-report-v2-${mk}-${uid}`);
+    setDashKey((k) => k + 1);
+  }
+
   async function handleToggleSample() {
     if (!userId) return;
     if (sampleLoaded) {
@@ -1113,6 +1198,7 @@ export default function Home() {
         if (selectedFriendId && SAMPLE_IDS.includes(selectedFriendId)) setSelectedFriendId(null);
       }
       setSampleLoaded(false);
+      clearMonthlyReportCache(userId);
       showToast("Sample data cleared");
     } else {
       if (isGuest) {
@@ -1128,6 +1214,7 @@ export default function Home() {
         setFriends(updated);
       }
       setSampleLoaded(true);
+      clearMonthlyReportCache(userId);
       showToast("Sample data loaded");
     }
   }
@@ -1165,13 +1252,9 @@ export default function Home() {
             <div style={{ padding: "10px 0 8px" }}>
               <button
                 onClick={() => setSelectedFriendId(null)}
-                className="sidebar-dash-btn"
-                style={{
-                  background: selectedFriendId === null ? "#EAE3D6" : "transparent",
-                  color: selectedFriendId === null ? "#2E2A24" : "#6B6259",
-                }}
+                className={`sidebar-dash-btn${selectedFriendId === null ? " sidebar-dash-btn--active" : ""}`}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
                 </svg>
                 Dashboard
@@ -1286,6 +1369,7 @@ export default function Home() {
             />
           ) : (
             <DashboardView
+              key={dashKey}
               friends={friends}
               userId={userId ?? "guest"}
               firstName={firstName}

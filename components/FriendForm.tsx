@@ -379,7 +379,7 @@ export default function FriendForm({
       {/* ── Row 5: Frequency ── */}
       <div style={{ display: "flex", gap: 16 }}>
         <Field style={{ flex: 1 }}>
-          <FieldLabel required>Text every</FieldLabel>
+          <FieldLabel required>Talk every</FieldLabel>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <InputWithFocus
               ref={textAmountRef}
